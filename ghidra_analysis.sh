@@ -4,17 +4,6 @@
 > /usr/local/src/boring_secret_hunter.log
 
 
-# Function to parse the log and extract the relevant portions
-parse_log() {
-    local log_file=$1
-    local bin_name=$2
-    local start_marker="=== Start analyzing $bin_name ==="
-    local end_marker="=== Finished analyzing $bin_name ==="
-
-    # Extract the log section between start and end markers
-    sed -n "/$start_marker/,/$end_marker/p" "$log_file"
-}
-
 # Loop through all binaries in the /usr/local/src/binaries folder
 for bin in /usr/local/src/binaries/*; do
     bin_name=$(basename "$bin")
@@ -33,9 +22,8 @@ for bin in /usr/local/src/binaries/*; do
         echo "=== Finished analyzing $bin_name ==="
     } >> /usr/local/src/boring_secret_hunter.log 2>&1
 
-    # Parse the log file for the current binary
-    #parse_log /usr/local/src/boring_secret_hunter.log "$bin_name"
     # Parse the log file for relevant output
     sed -n "/=== Start analyzing $(basename "$bin") ===/,/=== Finished analyzing $(basename "$bin") ===/p" /usr/local/src/boring_secret_hunter.log | \
     sed -n '/BoringSecretHunter/,/Thx for using BoringSecretHunter/p'
+    echo "\n"
 done
