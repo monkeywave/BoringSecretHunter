@@ -16,10 +16,8 @@ for bin in /usr/local/src/binaries/*; do
         echo "=== Start analyzing $bin_name ==="
         
         # Run the Ghidra analysis script for the current binary
-        #python3 /usr/local/src/boring_secret_hunter.py "$bin"
-
         /opt/ghidra_11.1.2_PUBLIC/support/analyzeHeadless /tmp ghidra_project_$(date +%s) \
-            -import "$bin" -scriptPath /usr/local/src/ -prescript /usr/local/src/MinimalAnalysisOption.java -postScript /usr/local/src/BoringSecretHunter.java
+            -import "$bin" -postScript /usr/local/src/boring_secret_hunter_jython.py
         
         echo "=== Finished analyzing $bin_name ==="
     } >> /usr/local/src/boring_secret_hunter.log 2>&1
@@ -27,5 +25,5 @@ for bin in /usr/local/src/binaries/*; do
     # Parse the log file for relevant output
     sed -n "/=== Start analyzing $(basename "$bin") ===/,/=== Finished analyzing $(basename "$bin") ===/p" /usr/local/src/boring_secret_hunter.log | \
     sed -n '/BoringSecretHunter/,/Thx for using BoringSecretHunter/p'
-    #echo "\n"
+    echo "\n"
 done
