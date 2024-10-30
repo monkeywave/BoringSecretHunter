@@ -26,9 +26,7 @@ WORKDIR /usr/local/src
 COPY boring_secret_hunter_jython.py /usr/local/src/boring_secret_hunter_jython.py
 COPY boring_secret_hunter.py /usr/local/src/boring_secret_hunter.py
 COPY BoringSecretHunter.java /usr/local/src/BoringSecretHunter.java
-COPY BoringSecretHunter.class /usr/local/src/BoringSecretHunter.class
 COPY MinimalAnalysisOption.java /usr/local/src/MinimalAnalysisOption.java
-COPY MinimalAnalysisOption.class /usr/local/src/MinimalAnalysisOption.class
 COPY custom_log4j.xml /usr/local/src/custom_log4j.xml
 COPY ghidra_analysis.sh /usr/local/src/ghidra_analysis.sh
 

@@ -3,15 +3,11 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Listing;
-import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.Memory;
 import ghidra.program.model.symbol.Reference;
-import ghidra.program.model.symbol.ReferenceManager;
 import ghidra.program.model.listing.DataIterator;
-import ghidra.program.model.symbol.ReferenceIterator;
 import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.listing.Instruction;
-import ghidra.util.exception.AssertException;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -39,7 +35,7 @@ public class Pair<K, V> {
 }
 
 
-    private static final String VERSION = "0.7";
+    private static final String VERSION = "0.8";
     private static final boolean DEBUG_RUN = false;
 
     private void printBoringSecretHunterLogo() {
@@ -215,21 +211,22 @@ private Address findReferenceToStringAtAddress(Address referenceAddr) {
     protected void run() throws Exception {
         printBoringSecretHunterLogo();
         String binInfoGreetings = getBinaryInfos();
-        println(binInfoGreetings);
+        System.out.println(binInfoGreetings);
 
         String stringToFind = "SERVER_HANDSHAKE_TRAFFIC_SECRET";
         System.out.println("[*] Looking for " + stringToFind);
 
-        /* 
-        Set<Function> functions = findStringUsage(stringToFind);
-        if (functions.isEmpty()) {
-            println("[-] No functions found using the string.\nssl_log_secret() function not found.");
-            return;
-        }*/
 
         Pair<Set<Function>, Address> result = findStringUsage(stringToFind);
         Set<Function> functions = result.getFirst();
         Address referenceAddress = result.getSecond();
+        if(referenceAddress == null){
+            stringToFind = "CLIENT_RANDOM";
+            System.out.println("[*] Trying fallback approach with String " + stringToFind);
+            result = findStringUsage(stringToFind);
+            functions = result.getFirst();
+            referenceAddress = result.getSecond();
+        }
 
         if (!functions.isEmpty()) {
             Function firstFunction = functions.iterator().next();
@@ -248,7 +245,8 @@ private Address findReferenceToStringAtAddress(Address referenceAddr) {
                 }
             } 
         } else {
-            System.err.println("[-] No functions found that reference the specified string.");
+            System.err.println("[-] No functions found using the string.\nssl_log_secret() function not found.");
         }
     }
 }
+
