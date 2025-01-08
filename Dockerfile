@@ -1,9 +1,9 @@
 # Base image with Java (required for Ghidra)
-FROM gradle:jdk17
+FROM gradle:jdk21
 
 # Install Python and dependencies
 RUN apt-get update && \
-    apt-get install -y python3 python3-pip wget git bison flex build-essential  unzip && \
+    apt-get install -y python3 python3-pip wget git bison flex build-essential  unzip file && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Ghidra

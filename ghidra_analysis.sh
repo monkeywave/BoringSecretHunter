@@ -5,7 +5,7 @@
 
 
 # Loop through all binaries in the /usr/local/src/binaries folder
-for bin in /usr/local/src/binaries/*; do
+for bin in $(file /usr/local/src/binaries/*| grep -i -e "elf" -e "mach-o" -e "pe32" | awk -F':' '{print $1}' | awk '{print $1}' | uniq); do
     bin_name=$(basename "$bin")
 
     # Print the analyzing message to the terminal (not redirected)
