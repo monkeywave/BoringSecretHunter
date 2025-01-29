@@ -5,6 +5,7 @@ __pycache__/
 
 # misc stuff
 *.txt
+*.apk
 *.oat
 *.js
 binary/
