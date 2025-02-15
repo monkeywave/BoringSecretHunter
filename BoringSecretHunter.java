@@ -44,10 +44,12 @@ public class Pair<K, V> {
 }
 
 
-    private static final String VERSION = "0.9.5";
+    private static final String VERSION = "0.9.7";
     private static final boolean DEBUG_RUN = false;
 
     private void printBoringSecretHunterLogo() {
+        System.out.println("Running on Java version: " + System.getProperty("java.version"));
+        System.out.println("Current Ghidra version: " + currentProgram.getLanguage().getVersion());
         println("");
         System.out.println("""
                             BoringSecretHunter
@@ -382,8 +384,7 @@ private void extractFunctionInfo(Function function) {
     // Print the function information to the terminal
     System.out.println();
     if(function.getCallingConventionName().contains("rust")){
-        System.out.println("[!] "+function.getCallingConventionName()+" calling convention detected.");
-        System.out.println("[!] Keep in mind that hooking functions using the "+function.getCallingConventionName()+" calling convention with Frida can be tricky...");
+        System.out.println("[!] Keep in mind that hooking function using the "+function.getCallingConventionName()+" with frida is a little bit tricky...");
         String mangled_target_function_name = get_rustcall_mangled_function_name(entryPoint);
         System.out.println("[*] Function label: " + label+  " ("+ mangled_target_function_name +")");
 
@@ -443,6 +444,7 @@ private Address findReferenceToStringAtAddress(Address referenceAddr) {
         Instruction instruction = listing.getInstructionAt(entryPoint);
         int length = 0;
 
+
         if (instruction == null) {
             println("[-] No instruction found at entry point: " + entryPoint);
             println("[-] Defaulting to 32 bytes");
@@ -460,6 +462,21 @@ private Address findReferenceToStringAtAddress(Address referenceAddr) {
             listing.getInstructionAt(entryPoint).getFlowType().isCall()) {
                 // with that we ensure that we also count the length of the branch itself
                 length += listing.getInstructionAt(entryPoint).getLength();
+                instruction = listing.getInstructionAt(entryPoint);
+
+                Address[] flows = instruction.getFlows();
+                if (flows.length > 0) {
+                    Address target_address_of_call_instruction = flows[0];
+                    // is this function call still part of the analysed function
+                    if (function.getBody().contains(target_address_of_call_instruction) && (target_address_of_call_instruction.subtract(instruction.getAddress()))< 10) {
+                        continue;
+                    } 
+                }
+
+                if(instruction.toString().toLowerCase().startsWith("call") && instruction.toString().toLowerCase().contains("$+")){
+                    continue;
+                }
+
                 break;
             }
             length += listing.getInstructionAt(entryPoint).getLength();
@@ -556,3 +573,4 @@ protected void run() throws Exception {
 
 
    }
+

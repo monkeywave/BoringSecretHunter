@@ -9,6 +9,16 @@ __pycache__/
 *.oat
 *.js
 binary/
+research/
+nonochrome/
+
+# ida stuff
+*.id0
+*.id1
+*.id2
+*.nam
+*.til
+*.i64
 
 # C extensions
 *.so
