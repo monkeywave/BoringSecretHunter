@@ -43,7 +43,7 @@ Analyzing libcronet.113.0.5672.61.so...
 ⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
     
 Identifying the ssl_log_secret() function for extracting key material using Frida.
-Version: 0.9.7 by Daniel Baier
+Version: 0.9.9 by Daniel Baier
 
 [*] Start analyzing binary libcronet.113.0.5672.61.so (CPU Architecture: AARCH64). This might take a while ...
 
