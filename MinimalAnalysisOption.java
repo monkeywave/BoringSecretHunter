@@ -38,6 +38,7 @@ public class MinimalAnalysisOption extends GhidraScript {
     private static final String DECOMPILER_SWITCH_ANALYSIS = "Decompiler Switch Analysis";
     private static final String STACK_ANALYSIS = "Stack";
     private static final String CONSTANT_PROPAGATION_ANALYSIS = "Basic Constant Reference Analyzer";
+    private static final String DWARF_ANALYZER = "DWARF";
 
 	@Override
 	protected void run() throws Exception {
@@ -129,7 +130,7 @@ Decompiler Parameter ID.Analysis Clear Level=ANALYSIS,
 Basic Constant Reference Analyzer.Create Data from pointer=false, 
 Decompiler Switch Analysis.Analysis Decompiler Timeout (sec)=60, 
 ASCII Strings.Require Null Termination for String=true, 
-Decompiler Parameter ID.Commit Data Types=true, 
+Decompiler Parameter ID.Commit Data Types=true, ???
 Create Address Tables.Minimum Table Size=2, 
 Data Reference.References to Pointers=true, 
 Demangler GNU.Apply Function Calling Conventions=true, 
@@ -189,22 +190,26 @@ Decompiler Switch Analysis=true,
 			setAnalysisOption(currentProgram, LIBRARY_IDENTIFICATION, "false");
 		}
 		if (options.containsKey(DEMANGLER_MS_ANALYZER)) {
-			setAnalysisOption(currentProgram, DEMANGLER_MS_ANALYZER, "false");
+			setAnalysisOption(currentProgram, DEMANGLER_MS_ANALYZER, "true");
 		}
 		if (options.containsKey(DEMANGLER_GNU_ANALYZER)) {
-			setAnalysisOption(currentProgram, DEMANGLER_GNU_ANALYZER, "false");
+			setAnalysisOption(currentProgram, DEMANGLER_GNU_ANALYZER, "true");
 		}
 		if (options.containsKey(SCALAR_OPERAND_ANALYZER)) {
 			setAnalysisOption(currentProgram, SCALAR_OPERAND_ANALYZER, "false");
-		}
+		}/* 
+        // This analysis takes the most time, unfortunately it is in some occasions needed (e.g. PRF on BoringSSL) 
         if (options.containsKey(DECOMPILER_SWITCH_ANALYSIS)) {
 			setAnalysisOption(currentProgram, DECOMPILER_SWITCH_ANALYSIS, "false");
-		}
-        if (options.containsKey(STACK_ANALYSIS)) {
+		}*/
+        /*if (options.containsKey(STACK_ANALYSIS)) {
 			setAnalysisOption(currentProgram, STACK_ANALYSIS, "false");
-		}
+		}/*
         if (options.containsKey(CONSTANT_PROPAGATION_ANALYSIS)) {
-			//setAnalysisOption(currentProgram, CONSTANT_PROPAGATION_ANALYSIS, "false");
+			setAnalysisOption(currentProgram, CONSTANT_PROPAGATION_ANALYSIS, "false");
+		}*/
+        if (options.containsKey(DWARF_ANALYZER)) {
+			setAnalysisOption(currentProgram, DWARF_ANALYZER, "false");
 		}
 
       

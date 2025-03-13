@@ -1,5 +1,6 @@
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Listing;
@@ -12,6 +13,7 @@ import ghidra.program.model.listing.DataIterator;
 import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolTable;
 
@@ -44,7 +46,7 @@ public class Pair<K, V> {
 }
 
 
-    private static final String VERSION = "0.9.7";
+    private static final String VERSION = "0.9.9";
     private static final boolean DEBUG_RUN = false;
 
     private void printBoringSecretHunterLogo() {
@@ -82,7 +84,7 @@ public class Pair<K, V> {
     
         while (dataIterator.hasNext()) {
             Data data = dataIterator.next();
-            if (data.getDataType().getName().equals("string") && data.getValue().toString().contains(stringToFind)) {
+            if (data.getDataType().getName().equals("string") && data.getValue().toString().toLowerCase().contains(stringToFind.toLowerCase())) {
                 Reference[] references = getReferencesTo(data.getAddress());
                 for (Reference ref : references) {
                     referenceAddress = ref.getFromAddress(); // Store the reference address
@@ -244,7 +246,7 @@ public Pair<Function, Address> traceDataSectionPointer(Program program, Address 
     }
 
 
-    private Pair<Set<Function>, Address> findHexStringInRodata(String targetString) {
+    private Pair<Set<Function>, Address> findHexStringInRodata(String targetString, boolean  do_print_info_msg) {
         Set<Function> functions = new HashSet<>();
         Pair<Function, Address> functionAddressPair;
         Address referenceAddress = null;
@@ -254,7 +256,9 @@ public Pair<Function, Address> traceDataSectionPointer(Program program, Address 
         MemoryBlock rodataBlock = memory.getBlock(".rodata"); // Locate the .rodata section
 
         if (rodataBlock == null) {
-            System.out.println(".rodata section not found!");
+            if(do_print_info_msg){
+                System.out.println("[-] .rodata section not found!");
+            }
             return new Pair<>(functions, null);
         }
 
@@ -278,7 +282,7 @@ public Pair<Function, Address> traceDataSectionPointer(Program program, Address 
             // First, search for the big-endian pattern
             foundAddress = searchPatterns(memory, start, end,
             new byte[][] {bigEndianWithNull, bigEndianWithSpace, targetBytes});
-            if (foundAddress != null && DEBUG_RUN) {
+            if (foundAddress != null && DEBUG_RUN && do_print_info_msg) {
                 System.out.println("[*] Found big-endian pattern at: " + foundAddress);
     
             }
@@ -287,25 +291,33 @@ public Pair<Function, Address> traceDataSectionPointer(Program program, Address 
                 // If not found, search for the little-endian pattern
                 foundAddress = searchPatterns(memory, start, end,
                     new byte[][] {littleEndianWithNull, littleEndianWithSpace, littleEndianPattern});
-                if (foundAddress != null && DEBUG_RUN) {
+                if (foundAddress != null && DEBUG_RUN && do_print_info_msg) {
                     System.out.println("[*] Found little-endian pattern at: " + foundAddress);
                 }
             }
 
         } catch (MemoryAccessException e) {
-            System.err.println("Error accessing memory: " + e.getMessage());
+            System.err.println("[-] Error accessing memory: " + e.getMessage());
         } catch (Exception e) {
-            System.err.println("Error in pattern identification: " + e.getMessage());
+            System.err.println("[-] Error in pattern identification: " + e.getMessage());
         }
 
 
         if(foundAddress != null){
-            System.out.println("[*] String found in .rodata section at address: " + foundAddress);
+            if(do_print_info_msg){
+                System.out.println("[*] String found in .rodata section at address: " + foundAddress);
+            }
             functionAddressPair = findFunctionReferences(foundAddress,".rodata");
+            if(functionAddressPair == null){
+                System.out.println("[-] Error in findFunctionReferences...");
+                return new Pair<>(functions, referenceAddress);
+            }
             functions.add(functionAddressPair.getFirst());
             referenceAddress = functionAddressPair.getSecond();
         }else{
-            System.err.println("[-] Unable to find pattern in .rodata section as well: "+foundAddress);
+            if(do_print_info_msg){
+                System.err.println("[-] Unable to find pattern in .rodata section as well: "+foundAddress);
+            }
         }
         
         return new Pair<>(functions, referenceAddress);
@@ -330,6 +342,28 @@ public Pair<Function, Address> traceDataSectionPointer(Program program, Address 
 
     }
 
+private boolean is_target_binary_a_rust_binary(){
+    SymbolTable symbolTable = currentProgram.getSymbolTable();
+        
+        String[] rustSymbols = {
+            "rust_eh_personality", 
+            "core::panicking::panic_fmt",
+            "alloc::alloc::alloc",
+            "std::rt::lang_start",
+            "_ZN3std2rt10lang_start",
+            "DW.ref.rust_eh_personality"
+        };
+        
+        for (Symbol symbol : symbolTable.getAllSymbols(true)) {
+            for (String rustSymbol : rustSymbols) {
+                if (symbol.getName().contains(rustSymbol)) {
+                    System.out.println("🚀 Rust Binary Detected! Symbol found: " + symbol.getName());
+                    return true; // Stop early if Rust is confirmed
+                }
+            }
+        }
+        return false;
+}
 
 private String get_rustcall_mangled_function_name(Address targetAddress){
     SymbolTable symbolTable = currentProgram.getSymbolTable();
@@ -354,6 +388,32 @@ private String get_rustcall_mangled_function_name(Address targetAddress){
 }
 
 
+/**
+     * Returns the first function that calls the given function.
+     * 
+     * @param function The function whose caller is to be determined.
+     * @return The caller function if found; otherwise, null.
+     */
+    private Function getFirstCaller(Function function) {
+        // Get the entry point of the function.
+        Address entry = function.getEntryPoint();
+        // Retrieve all references to this address.
+        ReferenceIterator refIter = currentProgram.getReferenceManager().getReferencesTo(entry);
+        while (refIter.hasNext()) {
+            Reference ref = refIter.next();
+            // Check if the reference is a call.
+            if (ref.getReferenceType().isCall()) {
+                // Get the function containing the caller address.
+                Function caller = getFunctionContaining(ref.getFromAddress());
+                if (caller != null) {
+                    return caller;
+                }
+            }
+        }
+        return null;
+    }
+
+
 
 // Function to extract function information
 private void extractFunctionInfo(Function function) {
@@ -371,6 +431,21 @@ private void extractFunctionInfo(Function function) {
 
     // Determine the length of bytes until the first branch
     int numBytes = getLengthUntilBranch(function);
+
+    if(numBytes == -42){
+        System.out.println("[*] Couldn't find a branching instruction in current function...");
+        Function callerFunction = getFirstCaller(function);
+        if(callerFunction == null){
+            System.err.println("[-] Unable to identify target calling function..");
+        }else{
+            System.out.println("[*] Using calling function as ssl_log()...");
+            numBytes = getLengthUntilBranch(callerFunction);
+            function = callerFunction;
+            entryPoint = function.getEntryPoint();
+            label = function.getName();
+        }
+        
+    }
 
     // Use the custom readBytes function to read the dynamically determined length of bytes
     byte[] byteData = readBytes(memory, entryPoint, numBytes);
@@ -408,8 +483,8 @@ private byte[] readBytes(Memory memory, Address address, int numBytes) {
     return byteData;
 }
 
-private Address findReferenceToStringAtAddress(Address referenceAddr) {
-    System.out.println("[*] Analyzing reference at address: " + referenceAddr);
+private Address findReferenceToStringAtAddress(Address referenceAddr, Function function) {
+    System.out.println("[*] Analyzing reference at address: " + referenceAddr + " in function: "+function.getName());
     Listing listing = currentProgram.getListing();
     Instruction instruction = listing.getInstructionAt(referenceAddr);
 
@@ -420,9 +495,27 @@ private Address findReferenceToStringAtAddress(Address referenceAddr) {
 
     // Look for the function containing this reference
     Function containingFunction = getFunctionContaining(referenceAddr);
+    
+    
+    
     if (containingFunction != null) {
+        if(DEBUG_RUN){
+        
+            System.out.println("[!] Start analyzing the function at ref: "+containingFunction.getName());
+        }
         while (instruction != null && !instruction.getFlowType().isCall()) {
             instruction = instruction.getNext();
+        }
+
+        if(containingFunction.getBody().contains(instruction.getAddress())){
+            if(DEBUG_RUN){
+                System.out.println("[!] Target address is part of the analyzed function");
+            }
+        }else{
+            if(DEBUG_RUN){
+                System.out.println("[!] Target address is not part of the analyzed function...");
+            }
+            return null;
         }
 
         if (instruction != null && instruction.getFlowType().isCall()) {
@@ -441,28 +534,33 @@ private Address findReferenceToStringAtAddress(Address referenceAddr) {
     private int getLengthUntilBranch(Function function) {
         Address entryPoint = function.getEntryPoint();
         Listing listing = currentProgram.getListing();
-        Instruction instruction = listing.getInstructionAt(entryPoint);
+        AddressSetView functionBody = function.getBody();
+        // Get the first instruction at the entry point
+        InstructionIterator instructions = listing.getInstructions(functionBody, true); 
+        Instruction start_instruction = listing.getInstructionAt(entryPoint);
         int length = 0;
+        boolean found_call = false;
 
 
-        if (instruction == null) {
+        if (start_instruction == null) {
             println("[-] No instruction found at entry point: " + entryPoint);
             println("[-] Defaulting to 32 bytes");
             return 32; // Default to 32 if no instructions are found
         }
 
-        while (true) {
-            if (listing.getInstructionAt(entryPoint) == null) {
+        while (instructions.hasNext()) {
+            Instruction instruction = instructions.next();
+            if (instruction == null) {
                 break; // Break if there's no instruction at the current address
             }
 
             // Check if the instruction is a branch, jump, or call
-            if (listing.getInstructionAt(entryPoint).getFlowType().isJump() ||
-            listing.getInstructionAt(entryPoint).getFlowType().isConditional() ||
-            listing.getInstructionAt(entryPoint).getFlowType().isCall()) {
+            if (instruction.getFlowType().isJump() ||
+            instruction.getFlowType().isConditional() ||
+            instruction.getFlowType().isCall()) {
                 // with that we ensure that we also count the length of the branch itself
-                length += listing.getInstructionAt(entryPoint).getLength();
-                instruction = listing.getInstructionAt(entryPoint);
+                length += instruction.getLength();
+                //instruction = listing.getInstructionAt(entryPoint);
 
                 Address[] flows = instruction.getFlows();
                 if (flows.length > 0) {
@@ -477,12 +575,20 @@ private Address findReferenceToStringAtAddress(Address referenceAddr) {
                     continue;
                 }
 
+                found_call = true;
                 break;
             }
-            length += listing.getInstructionAt(entryPoint).getLength();
-            entryPoint = entryPoint.add(listing.getInstructionAt(entryPoint).getLength());
+            
+            //length += listing.getInstructionAt(entryPoint).getLength();
+            length += instruction.getLength();
+            //entryPoint = entryPoint.add(listing.getInstructionAt(entryPoint).getLength());
         }
-        return length;
+        if(found_call){
+            return length;
+        }else{
+            return -42; // indicates that we didn't identified a branch instruction in that function
+        }
+        
     }
 
     private String getBinaryInfos() {
@@ -502,14 +608,14 @@ private Address findReferenceToStringAtAddress(Address referenceAddr) {
 
 
 private void processFoundFunctions(Pair<Set<Function>, Address> result) {
-    //Set<Function> functions = result.getFirst();
+    Set<Function> functions = result.getFirst();
     Address referenceAddress = result.getSecond();
 
-    //Function firstFunction = functions.iterator().next();
+    Function firstFunction = functions.iterator().next();
     //int byteCount = getLengthUntilBranch(firstFunction);
     //System.out.println("[*] Function Found where the target string has been used: " + firstFunction.getName() + ", Byte Length: " + byteCount);
 
-    Address calledFunctionAddr = findReferenceToStringAtAddress(referenceAddress);
+    Address calledFunctionAddr = findReferenceToStringAtAddress(referenceAddress, firstFunction);
     if (calledFunctionAddr != null) {
         Function calledFunction = getFunctionAt(calledFunctionAddr);
         if (calledFunction != null) {
@@ -517,27 +623,31 @@ private void processFoundFunctions(Pair<Set<Function>, Address> result) {
         } else {
             System.err.println("[-] No function found at address: " + calledFunctionAddr);
         }
+    }else {
+        System.out.println("[*] Trying to identify the calling function...");
+        Function callerFunction = getFirstCaller(firstFunction);
+        if(callerFunction == null){
+            System.err.println("[-] Unable to identify target calling function...");
+        }else{
+            System.out.println("[*] Using calling function as ssl_log()...");
+            extractFunctionInfo(callerFunction);
+        }
+
     }
 }
 
 /**
  * Attempts to find the hex representation of a string in the .rodata section.
  */
-private Pair<Set<Function>, Address> findHexStringInRodataWrapper(String stringToFind) {
-    System.out.println("[*] Searching for hex representation of: " + stringToFind);
-    return findHexStringInRodata(stringToFind); // Assumes this method exists as per your script
+private Pair<Set<Function>, Address> findHexStringInRodataWrapper(String stringToFind, boolean do_print_info_msg) {
+    if(do_print_info_msg){
+        System.out.println("[*] Searching for hex representation of: " + stringToFind);
+    }
+    return findHexStringInRodata(stringToFind, do_print_info_msg); // Assumes this method exists as per your script
 }
 
 
-    @Override
-protected void run() throws Exception {
-    printBoringSecretHunterLogo();
-    String binInfoGreetings = getBinaryInfos();
-    System.out.println(binInfoGreetings);
-
-    String primaryString = "SERVER_HANDSHAKE_TRAFFIC_SECRET";
-    String fallbackString = "CLIENT_RANDOM";
-
+private void do_analysis(String primaryString, String fallbackString){
     // Step 1: Look for the primary string
     System.out.println("[*] Looking for " + primaryString);
     Pair<Set<Function>, Address> result = findStringUsage(primaryString);
@@ -554,11 +664,11 @@ protected void run() throws Exception {
     } else {
         // Fallback: Try looking for hex representation in .rodata
         System.out.println("[*] No string found. Searching for its hex representation...");
-        result = findHexStringInRodataWrapper(primaryString);
+        result = findHexStringInRodataWrapper(primaryString, true);
 
         if (result.getSecond() == null) {
             System.out.println("[*] Trying fallback approach with hex representation of " + fallbackString);
-            result = findHexStringInRodataWrapper(fallbackString);
+            result = findHexStringInRodataWrapper(fallbackString, true);
         }
 
         if (!result.getFirst().isEmpty()) {
@@ -568,6 +678,41 @@ protected void run() throws Exception {
             System.err.println("[-] ssl_log_secret() function not found.");
         }
     }
+
+}
+
+
+    @Override
+protected void run() throws Exception {
+    printBoringSecretHunterLogo();
+    String binInfoGreetings = getBinaryInfos();
+    System.out.println(binInfoGreetings);
+
+    String primaryString = "SERVER_HANDSHAKE_TRAFFIC_SECRET";
+    String fallbackString = "CLIENT_RANDOM";
+    do_analysis(primaryString,fallbackString);
+    if(is_target_binary_a_rust_binary()){
+        System.out.println("\n[*] Target binary is a Rust binary. Looking if RusTLS was used...");
+        primaryString = "rustls";
+        fallbackString = "not a loggable secret"; // 
+
+        Pair<Set<Function>, Address> result = findStringUsage(primaryString);
+
+        // Step 2: If not found, fallback to the alternative string
+        if (result.getSecond() == null) {
+            result = findHexStringInRodataWrapper(fallbackString, false);
+            if (result.getFirst().isEmpty()) {
+                System.out.println("[*] No RusTLS detected. Keep using the BoringSSL hooks!");
+                return;
+            }
+
+        }
+        System.out.println("\n[*] This binary contains 🚀 RusTLS try to use the RusTLS hooks for this pattern!");
+        
+    }
+    
+
+    
 }
 
 
