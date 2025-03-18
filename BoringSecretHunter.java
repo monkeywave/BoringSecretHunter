@@ -46,12 +46,16 @@ public class Pair<K, V> {
 }
 
 
-    private static final String VERSION = "0.9.9";
-    private static final boolean DEBUG_RUN = false;
+    private static final String VERSION = "1.0.0";
+    private static boolean DEBUG_RUN = false;
 
     private void printBoringSecretHunterLogo() {
-        System.out.println("Running on Java version: " + System.getProperty("java.version"));
-        System.out.println("Current Ghidra version: " + currentProgram.getLanguage().getVersion());
+        if(DEBUG_RUN){
+            System.out.println("[!] BoringSecretHunter Environment infos: ");
+            System.out.println("[!] Running on Java version: " + System.getProperty("java.version"));
+            System.out.println("[!] Current Ghidra version: " + currentProgram.getLanguage().getVersion()+"\n");
+        }
+        
         println("");
         System.out.println("""
                             BoringSecretHunter
@@ -96,6 +100,25 @@ public class Pair<K, V> {
             }
         }
         return new Pair<>(functions, referenceAddress); // Return both the set of functions and the reference address
+    }
+
+    private int countXRefs(Function function){
+        // Get the entry point of the function.
+        Address entry = function.getEntryPoint();       
+
+        // Obtain an iterator over all references to the entry point.
+        ReferenceIterator refIter = currentProgram.getReferenceManager().getReferencesTo(entry);
+
+        // Count the number of references.
+        int count = 0;
+        while (refIter.hasNext()) {
+            Reference ref = refIter.next();
+            if (ref.getReferenceType().isCall()) {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     // Utility function to append a byte to a byte array
@@ -522,11 +545,20 @@ private Address findReferenceToStringAtAddress(Address referenceAddr, Function f
             Address[] flowRefs = instruction.getFlows(); // Get the flow references for function calls
             if (flowRefs.length > 0) {
                 return flowRefs[0]; // Return the first flow reference as the called function address
+            }else{
+                if(DEBUG_RUN){
+                    System.out.println("[!] flowRefs: "+flowRefs.length + " on instruction: "+instruction.toString());
+                }
             }
         }
     }
 
+    
+
     System.err.println("[-] No function call found near the string reference.");
+    if(DEBUG_RUN){
+        System.out.println("[!] instruction: "+instruction.toString());
+    }
     return null;
 }
 
@@ -624,8 +656,21 @@ private void processFoundFunctions(Pair<Set<Function>, Address> result) {
             System.err.println("[-] No function found at address: " + calledFunctionAddr);
         }
     }else {
-        System.out.println("[*] Trying to identify the calling function...");
-        Function callerFunction = getFirstCaller(firstFunction);
+        
+        int numberOfXrefs = countXRefs(firstFunction);
+        if(DEBUG_RUN){
+            System.out.println("[!] Target function has "+numberOfXrefs+" invocation(s)");
+        }
+        Function callerFunction = null;
+        if(numberOfXrefs <= 1){
+            System.out.println("[*] Trying to identify the calling function...");
+            callerFunction = getFirstCaller(firstFunction);
+        }else{
+            System.out.println("[*] Using function with the identified label as ssl_log()...");
+            extractFunctionInfo(firstFunction);
+            return;
+        }
+        
         if(callerFunction == null){
             System.err.println("[-] Unable to identify target calling function...");
         }else{
@@ -681,9 +726,22 @@ private void do_analysis(String primaryString, String fallbackString){
 
 }
 
+private void set_debug_option(){
+    // Retrieve the script arguments.
+    String[] args = getScriptArgs();
+    for (String arg : args) {
+        // For example, if you pass "DEBUG_RUN=true" as an argument:
+        if (arg.equalsIgnoreCase("DEBUG_RUN=true")) {
+            DEBUG_RUN = true;
+            break;
+        }
+    }
+}
+
 
     @Override
 protected void run() throws Exception {
+    set_debug_option();
     printBoringSecretHunterLogo();
     String binInfoGreetings = getBinaryInfos();
     System.out.println(binInfoGreetings);
