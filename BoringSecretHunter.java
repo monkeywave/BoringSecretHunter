@@ -26,6 +26,8 @@ import java.util.Set;
 
 public class BoringSecretHunter extends GhidraScript {
 
+private static String identified_pattern = "";
+
     // Custom implementation of Pair class
 public class Pair<K, V> {
     private final K first;
@@ -46,7 +48,7 @@ public class Pair<K, V> {
 }
 
 
-    private static final String VERSION = "1.0.0";
+    private static final String VERSION = "1.0.1";
     private static boolean DEBUG_RUN = false;
 
     private void printBoringSecretHunterLogo() {
@@ -77,6 +79,17 @@ public class Pair<K, V> {
         """);
         System.out.println("Identifying the ssl_log_secret() function for extracting key material using Frida.");
         System.out.println("Version: " + VERSION + " by Daniel Baier\n");
+    }
+
+
+
+    private void print_max_pattern(){
+        String identfied_byte_pattern = BoringSecretHunter.identified_pattern;
+    
+        if(identfied_byte_pattern.length() > 140){
+            System.out.println("[*] Orignal pattern was too long! Our analysis showed that a pattern longer than 140 (47 hex bytes) is unable to identify the target function...");
+            System.out.println("[*] Byte pattern for frida (friTap) truncated version: " + identfied_byte_pattern.substring(0, 140));
+        }
     }
 
     private Pair<Set<Function>, Address> findStringUsage(String stringToFind) {
@@ -493,6 +506,7 @@ private void extractFunctionInfo(Function function) {
     System.out.println("[*] Function offset (Ghidra): " + entryPoint.toString().toUpperCase() + " (0x" + entryPoint.toString().toUpperCase() + ")");
     System.out.println("[*] Function offset (IDA with base 0x0): " + get_ida_address(entryPoint) + " (0x" + get_ida_address(entryPoint) + ")");
     System.out.println("[*] Byte pattern for frida (friTap): " + bytePattern.toString().trim());
+    BoringSecretHunter.identified_pattern = bytePattern.toString().trim();
 }
 
 // Helper function to read bytes from memory
@@ -750,6 +764,7 @@ protected void run() throws Exception {
     String fallbackString = "CLIENT_RANDOM";
     do_analysis(primaryString,fallbackString);
     if(is_target_binary_a_rust_binary()){
+        print_max_pattern();
         System.out.println("\n[*] Target binary is a Rust binary. Looking if RusTLS was used...");
         primaryString = "rustls";
         fallbackString = "not a loggable secret"; // 
@@ -760,8 +775,12 @@ protected void run() throws Exception {
         if (result.getSecond() == null) {
             result = findHexStringInRodataWrapper(fallbackString, false);
             if (result.getFirst().isEmpty()) {
-                System.out.println("[*] No RusTLS detected. Keep using the BoringSSL hooks!");
-                return;
+                result = findHexStringInRodataWrapper(primaryString, false);
+                if (result.getFirst().isEmpty()) {
+                    System.out.println("[*] No RusTLS detected. Keep using the BoringSSL hooks!");
+                    return;
+                }
+                
             }
 
         }
