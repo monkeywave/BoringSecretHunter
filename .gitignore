@@ -5,6 +5,7 @@ __pycache__/
 
 # misc stuff
 *.txt
+.DS_Store
 *.apk
 *.oat
 *.js
