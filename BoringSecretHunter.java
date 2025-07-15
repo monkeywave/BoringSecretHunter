@@ -420,7 +420,11 @@ public Pair<Function, Address> traceDataSectionPointer(Program program, Address 
                     }
                 }
 
-                System.out.println("[*] Found a reference to " + dataRelRoAddress + " at: " + refAddr + " in function: " + function.getName());
+                if(function != null) {
+                    System.out.println("[*] Found a reference to " + dataRelRoAddress + " at: " + refAddr + " in function: " + function.getName());
+                } else {
+                    System.out.println("[*] Found a reference to " + dataRelRoAddress + " at: " + refAddr + " in function: <UNDEFINED>");
+                }
                 functionAddressPairs.add(new Pair<>(function, refAddr));
                 
             }else{
