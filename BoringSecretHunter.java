@@ -45,7 +45,7 @@ public class Pair<K, V> {
 }
 
 
-    private static final String VERSION = "1.0.4";
+    private static final String VERSION = "1.0.6";
     private static boolean DEBUG_RUN = false;
     public static boolean identifiedTls13 = false;
     public static String tls13GhidraOffset = null;
@@ -213,7 +213,7 @@ public class Pair<K, V> {
             if (data.getDataType().getName().equals("string") && data.getValue().toString().toLowerCase().contains(stringToFind.toLowerCase())) {
                 Reference[] references = getReferencesTo(data.getAddress());
                 if(DEBUG_RUN){
-                    System.out.println("[!] Found string\""+stringToFind+ "\"at location "+data.getAddress()+ " (IDA: 0x"+get_ida_address(data.getAddress())+")" +" with value "+data.getValue().toString());
+                    System.out.println("[!] Found string \""+stringToFind+ "\"at location "+data.getAddress()+ " (IDA: 0x"+get_ida_address(data.getAddress())+")" +" with value "+data.getValue().toString());
                 }
                 for (Reference ref : references) {
                     referenceAddress = ref.getFromAddress(); // Store the reference address
@@ -601,6 +601,7 @@ private boolean is_target_binary_a_rust_binary(){
     for (MemoryBlock block : memory.getBlocks()) {
         String blockName = block.getName();
         if (blockName != null && (blockName.contains(".rustc") || blockName.contains("note.rustc"))) {
+            System.out.println("0");
             return true;
         }
     }
@@ -637,6 +638,7 @@ private boolean is_target_binary_a_rust_binary(){
         for (String marker : rustStringMarkers) {
             boolean has_rust_String = is_string_in_binary(marker);
             if(has_rust_String){
+                System.out.println("1");
                 // we have a rust binary
                 return true;
             }
@@ -646,12 +648,15 @@ private boolean is_target_binary_a_rust_binary(){
             boolean has_rust_String = isHexStringInRodata(marker);
             if(has_rust_String){
                 // we have a rust binary
+                System.out.println("2");
                 return true;
             }
         }
 
-
-        System.out.println("[*] None rust binary...");
+        if(DEBUG_RUN){
+            System.out.println("[*] None rust binary...");
+        }
+        
         return false;
 }
 
@@ -990,6 +995,11 @@ private void do_analysis(String primaryString, String fallbackString){
     System.out.println("[*] Looking for " + primaryString);
     Pair<Set<Function>, Address> result = findStringUsage(primaryString);
 
+
+    if(DEBUG_RUN){
+        System.out.println("[!] Found " + result.getFirst().size() + " function(s) using the string: " + primaryString);
+    }   
+
     // Step 2: If not found, fallback to the alternative string
     if (result.getSecond() == null) {
         System.out.println("[*] Trying fallback approach with String " + fallbackString);
@@ -1030,6 +1040,7 @@ private void set_debug_option(){
             DEBUG_RUN = true;
             break;
         }
+        
     }
 }
 
@@ -1041,12 +1052,12 @@ protected void run() throws Exception {
     String binInfoGreetings = getBinaryInfos();
     System.out.println(binInfoGreetings);
 
-    String primaryString = "SERVER_HANDSHAKE_TRAFFIC_SECRET";
+    //String primaryString = "SERVER_HANDSHAKE_TRAFFIC_SECRET";
+    String primaryString = "EXPORTER_SECRET";
     String fallbackString = "CLIENT_RANDOM";
     do_analysis(primaryString,fallbackString);
     if(is_target_binary_a_rust_binary()){
-        print_max_pattern();
-        System.out.println("\n[*] Target binary is a Rust binary. Looking if RusTLS was used...");
+        print_max_pattern();  
         primaryString = "rustls";
         fallbackString = "not a loggable secret"; // 
 
@@ -1056,6 +1067,8 @@ protected void run() throws Exception {
         if (result.getSecond() == null) {
             result = findHexStringInRodataWrapper(fallbackString, false);
             if (result.getFirst().isEmpty()) {
+                System.out.println("[*]result.getFirst().isEmpty(): "+result.getFirst().isEmpty());
+                System.out.println("\n[*] Target binary is a Rust binary. Looking if RusTLS was used...");
                 result = findHexStringInRodataWrapper(primaryString, false);
                 if (result.getFirst().isEmpty()) {
                     System.out.println("[*] No RusTLS detected. Keep using the BoringSSL hooks!");

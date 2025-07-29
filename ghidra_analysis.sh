@@ -12,8 +12,19 @@ if $DEBUG_FLAG; then
     DEBUG_ARGS="DEBUG_RUN=true"
     echo "[*] Debug mode enabled."
 else
-    DEBUG_ARGS=""
+    # Check if DEBUG_RUN environment variable is set and true
+    if [[ "${DEBUG_RUN,,}" == "true" ]]; then
+        DEBUG_ARGS="DEBUG_RUN=true"
+        echo "[*] Debug mode enabled."
+    else
+        DEBUG_ARGS=""
+        #echo "[*] DEBUG_RUN is not set or false; proceeding without debug output."
+    fi
 fi
+
+
+
+
 
 # Truncate the log file at the beginning of each Docker run to ensure a fresh log
 > /usr/local/src/boring_secret_hunter.log
