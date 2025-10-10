@@ -29,9 +29,9 @@ fi
 # Truncate the log file at the beginning of each Docker run to ensure a fresh log
 > /usr/local/src/boring_secret_hunter.log
 
-
 # Loop through all binaries in the /usr/local/src/binaries folder
 for bin in $(file /usr/local/src/binaries/*| grep -i -e "elf" -e "mach-o" -e "pe32" | awk -F':' '{print $1}' | awk '{print $1}' | uniq); do
+#for bin in $(ls /usr/local/src/binaries/*); do  # this would allow all binary types
     bin_name=$(basename "$bin")
 
     # Print the analyzing message to the terminal (not redirected)
