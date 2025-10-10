@@ -10,6 +10,7 @@ __pycache__/
 *.oat
 *.js
 *.md
+frida_debug_scan_helper.py
 binary/
 research/
 nonochrome/
