@@ -73,3 +73,87 @@ $ docker run -it --entrypoint /bin/bash  -v "$(pwd)/binary":/usr/local/src/binar
 # /opt/ghidra_11.1.2_PUBLIC/support/analyzeHeadless /tmp ghidra_project_$(date +%s) \
             -import "$bin" -scriptPath /usr/local/src/ -prescript /usr/local/src/MinimalAnalysisOption.java -postScript /usr/local/src/BoringSecretHunter.java DEBUG_RUN=true
 ```
+
+## How to identify SSL/TLS libraries
+
+A fast first step is to **scan the process’ mapped memory ranges** for key-log related strings (e.g., `CLIENT_RANDOM`). This works well on Android where multiple TLS stacks may be present (Conscrypt/BoringSSL, Cronet, app-bundled JNI libs, etc.). Then general approach should also work on other platforms but currently this script focues on Android
+
+### Quick start: run the scanner
+```bash
+frida -U -n Signal -l scanner.js 
+     ____
+    / _  |   Frida 17.5.2 - A world-class dynamic instrumentation toolkit
+   | (_| |
+    > _  |   Commands:
+   /_/ |_|       help      -> Displays the help system
+   . . . .       object?   -> Display information about 'object'
+   . . . .       exit/quit -> Exit
+   . . . .
+   . . . .   More info at https://frida.re/docs/home/
+   . . . .
+   . . . .   Connected to Pixel 7 (id=31041FDH2006EY)
+Attaching...                                                            
+[-] Starting Kernel-Level Discovery Scan...
+
+[+] CANDIDATE FOUND: libssl.so
+    |-- Match:      "CLIENT_RANDOM"
+    |-- Segment:    r--
+    |-- Address:    0x77cb0bfa5e
+    |-- Offset:     0x15a5e
+    |-- Path:       /apex/com.android.conscrypt/lib64/libssl.so
+
+[+] CANDIDATE FOUND: stable_cronet_libssl.so
+    |-- Match:      "CLIENT_RANDOM"
+    |-- Segment:    r--
+    |-- Address:    0x77bdd9207c
+    |-- Offset:     0x1107c
+    |-- Path:       /apex/com.android.tethering/lib64/stable_cronet_libssl.so
+
+[+] CANDIDATE FOUND: libconscrypt_jni.so
+    |-- Match:      "CLIENT_RANDOM"
+    |-- Segment:    r-x
+    |-- Address:    0x775f85b222
+    |-- Offset:     0x198222
+    |-- Path:       /data/app/~~_5EN8WxAdkxnS2z2qKiv5g==/org.thoughtcrime.securesms-iYfaztHsw0XGyVwHv3vlsg==/split_config.arm64_v8a.apk!/lib/arm64-v8a/libconscrypt_jni.so
+
+[+] CANDIDATE FOUND: libsignal_jni.so
+    |-- Match:      "CLIENT_RANDOM"
+    |-- Segment:    r--
+    |-- Address:    0x77744a7d53
+    |-- Offset:     0x9fd53
+    |-- Path:       /data/app/~~_5EN8WxAdkxnS2z2qKiv5g==/org.thoughtcrime.securesms-iYfaztHsw0XGyVwHv3vlsg==/split_config.arm64_v8a.apk!/lib/arm64-v8a/libsignal_jni.so
+
+[+] CANDIDATE FOUND: libringrtc_rffi.so
+    |-- Match:      "CLIENT_RANDOM"
+    |-- Segment:    r-x
+    |-- Address:    0x7744e87ff1
+    |-- Offset:     0x3aff1
+    |-- Path:       /data/app/~~_5EN8WxAdkxnS2z2qKiv5g==/org.thoughtcrime.securesms-iYfaztHsw0XGyVwHv3vlsg==/split_config.arm64_v8a.apk!/lib/arm64-v8a/libringrtc_rffi.so
+[-] Scan Complete.
+[Pixel 7::Signal ]-> exit
+
+Thank you for using Frida!
+```
+
+### Why this approach works
+
+The scanner relies on `Process.enumerateRanges()` to enumerate all mapped virtual memory ranges in the current process that match a given protection (e.g., `r--`, `r-x`). Frida returns each range’s base, size, protection, and—when available—file mapping details (`file.path`, `file.offset`, `file.size`). 
+Frida
+
+On Linux/Android, these ranges correspond closely to the process’ memory mappings as exposed by `/proc/self/maps` (same conceptual source of truth: the kernel’s memory manager view of the process’ VMAs).
+
+*Key point:* we do not depend on “module enumeration”, ELF headers, exports, or section parsing. We ask:
+
+“Which memory pages exist and are readable in this process right now?”
+and then scan those pages for TLS related strings.
+
+Under the hood (what `scanner.js` is doing)
+
+1. Enumerate readable ranges
+    - e.g., `Process.enumerateRanges({ protection: 'r--', coalesce: true })`
+    - `coalesce: true` reduces noise by merging adjacent ranges with identical protection. 
+2. Scan each range for one or more signatures
+    - e.g., `CLIENT_RANDOM`, `SSLKEYLOGFILE`, `EXPORTER_SECRET`, etc.
+
+
+Multiple candidates are normal on Android (Conscrypt, Cronet, app-bundled JNI, WebRTC, etc.). Treat discovery as a shortlisting step: once you know the likely .so, you can move to the next phase: extracting so file to your device e.g. with `python3 ./findBoringSSLLibsOnAndroid.py --pid <app target pid> --library <your target lib name>` and provide it to BoringSecretHunter.
