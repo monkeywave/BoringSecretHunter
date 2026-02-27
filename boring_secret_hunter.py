@@ -22,7 +22,7 @@ def run_ghidra_command(file_path):
 
     # Construct the Ghidra command with the absolute path
     command = [
-        '/opt/ghidra_11.1.2_PUBLIC/support/analyzeHeadless',
+        '/opt/ghidra_12.0.3_PUBLIC/support/analyzeHeadless',
         '/usr/local/src/',
         tmp_project_name,
         '-import',

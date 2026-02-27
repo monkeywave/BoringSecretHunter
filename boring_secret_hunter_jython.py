@@ -1,3 +1,4 @@
+# @runtime Jython
 # -*- coding: utf-8 -*-
 
 # Ghidra script to identify ssl_log_secret() function

@@ -16,7 +16,7 @@ for bin in /usr/local/src/binaries/*; do
         echo "=== Start analyzing $bin_name ==="
         
         # Run the Ghidra analysis script for the current binary
-        /opt/ghidra_11.1.2_PUBLIC/support/analyzeHeadless /tmp ghidra_project_$(date +%s) \
+        /opt/ghidra_12.0.3_PUBLIC/support/analyzeHeadless /tmp ghidra_project_$(date +%s) \
             -import "$bin" -postScript /usr/local/src/boring_secret_hunter_jython.py
         
         echo "=== Finished analyzing $bin_name ==="

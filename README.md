@@ -16,6 +16,15 @@ Run the following command in the root of the BoringSecretHunter directory to bui
 docker build -t boringsecrethunter .
 ```
 
+## Supported Input Types
+
+BoringSecretHunter accepts the following file types in the `binary/` folder:
+
+- **ELF, Mach-O, PE32 binaries** — analyzed directly (e.g., `.so`, `.dylib`, `.dll`)
+- **Raw binary data files** — memory dumps without proper headers (e.g., `.bin` files reported as `data` by `file`) are imported and analyzed as raw binaries
+- **IPA files** — iOS app bundles; Mach-O binaries are extracted automatically before analysis
+- **APK files** — Android app bundles; ELF `.so` files are extracted automatically before analysis
+
 ## Usage
 
 Once the image is built, you can run the Docker container and provide the binary you want to analyze.
@@ -59,10 +68,36 @@ Byte pattern for frida (friTap): 3F 23 03 D5 FF C3 01 D1 FD 7B 04 A9 F6 57 05 A9
 
 ## 🔍 Debug Output
 
-If you're experiencing issues, try running BoringSecretHunter with debug output enabled first::
+If you're experiencing issues, try running BoringSecretHunter with debug output enabled. There are two ways:
+
+**Option 1: Environment variable (recommended for Docker)**
 ```bash
 $ docker run --rm -v "$(pwd)/binary":/usr/local/src/binaries -v "$(pwd)/results":/host_output -e DEBUG_RUN=true boringsecrethunter
 ```
+
+**Option 2: Command-line flag**
+```bash
+$ docker run --rm -v "$(pwd)/binary":/usr/local/src/binaries -v "$(pwd)/results":/host_output boringsecrethunter -d
+```
+
+> **Note:** Do not combine both methods (e.g., `-e DEBUG_RUN=true ... boringsecrethunter -d`). Use one or the other.
+
+### Raw Data Files (`DATA_PROCESSOR`)
+
+When analyzing raw binary data files (e.g., memory dumps reported as `data` by `file`), BoringSecretHunter auto-detects the CPU architecture from sibling binaries in the same folder. To override the auto-detection, set the `DATA_PROCESSOR` environment variable:
+
+```bash
+$ docker run --rm -v "$(pwd)/binary":/usr/local/src/binaries -v "$(pwd)/results":/host_output \
+    -e DATA_PROCESSOR="AARCH64:LE:64:v8A" boringsecrethunter
+```
+
+Supported processor values:
+| Value | Architecture |
+|---|---|
+| `AARCH64:LE:64:v8A` | ARM 64-bit (default) |
+| `ARM:LE:32:v8` | ARM 32-bit |
+| `x86:LE:64:default` | x86-64 |
+| `x86:LE:32:default` | x86 32-bit |
 
 ## 🐞 Interactive Debugging
 
@@ -70,7 +105,7 @@ For deeper inspection or troubleshooting, you can start BoringSecretHunter in in
 ```bash
 $ docker run -it --entrypoint /bin/bash  -v "$(pwd)/binary":/usr/local/src/binaries -v "$(pwd)/results":/host_output boringsecrethunter
 
-# /opt/ghidra_11.1.2_PUBLIC/support/analyzeHeadless /tmp ghidra_project_$(date +%s) \
+# /opt/ghidra_12.0.3_PUBLIC/support/analyzeHeadless /tmp ghidra_project_$(date +%s) \
             -import "$bin" -scriptPath /usr/local/src/ -prescript /usr/local/src/MinimalAnalysisOption.java -postScript /usr/local/src/BoringSecretHunter.java DEBUG_RUN=true
 ```
 

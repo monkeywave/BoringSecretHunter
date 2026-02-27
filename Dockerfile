@@ -1,5 +1,5 @@
 # Base image with Java (required for Ghidra)
-FROM gradle:jdk21
+FROM gradle:jdk25
 
 # Install Python and dependencies
 RUN apt-get update && \
@@ -8,18 +8,18 @@ RUN apt-get update && \
 
 # Install Ghidra
 WORKDIR /opt
-RUN wget https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.1.2_build/ghidra_11.1.2_PUBLIC_20240709.zip -O ghidra.zip && \
+RUN wget https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.0.3_build/ghidra_12.0.3_PUBLIC_20260210.zip -O ghidra.zip && \
     unzip ghidra.zip && \
     rm ghidra.zip
 
 # Set Ghidra and Java environment paths
-ENV GHIDRA_PATH=/opt/ghidra_11.1.2_PUBLIC
+ENV GHIDRA_PATH=/opt/ghidra_12.0.3_PUBLIC
 ENV JAVA_HOME=/opt/java/openjdk
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
 
 # Build support for decompiler
-RUN /opt/ghidra_11.1.2_PUBLIC/support/buildNatives
+RUN cd /opt/ghidra_12.0.3_PUBLIC/support/gradle && gradle buildNatives
 
 # Copy the Ghidra analysis script into the container
 WORKDIR /usr/local/src

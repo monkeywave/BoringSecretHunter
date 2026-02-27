@@ -45,8 +45,9 @@ public class Pair<K, V> {
 }
 
 
-    private static final String VERSION = "1.0.6";
+    private static final String VERSION = "1.1.0";
     private static boolean DEBUG_RUN = false;
+    private static String LARGE_DUMP_MODE = "normal";  // "normal", "fast", or "skip"
     public static boolean identifiedTls13 = false;
     public static String tls13GhidraOffset = null;
     public static String tls13IdaOffset = null;
@@ -234,6 +235,67 @@ public class Pair<K, V> {
         return isARM32;
     }
 
+    private MemoryBlock findRodataBlock() {
+        Memory memory = currentProgram.getMemory();
+        String[] sectionNames = {".rodata", ".rdata", "__cstring", "__const"};
+        for (String name : sectionNames) {
+            MemoryBlock block = memory.getBlock(name);
+            if (block != null) {
+                return block;
+            }
+        }
+
+        // Fallback for raw data dumps: return first readable block
+        for (MemoryBlock block : memory.getBlocks()) {
+            if (block.isRead()) {
+                if (DEBUG_RUN) {
+                    System.out.println("[!] No named rodata section found, using block: " + block.getName());
+                }
+                return block;
+            }
+        }
+
+        return null;
+    }
+
+    private List<MemoryBlock> findAllRodataBlocks() {
+        Memory memory = currentProgram.getMemory();
+        String[] sectionNames = {".rodata", ".rdata", "__cstring", "__const"};
+        List<MemoryBlock> blocks = new ArrayList<>();
+        for (String name : sectionNames) {
+            MemoryBlock block = memory.getBlock(name);
+            if (block != null) {
+                blocks.add(block);
+            }
+        }
+
+        // Fallback for raw data dumps (BinaryLoader): no named sections exist.
+        // Search all readable memory blocks instead.
+        if (blocks.isEmpty()) {
+            for (MemoryBlock block : memory.getBlocks()) {
+                if (block.isRead()) {
+                    blocks.add(block);
+                }
+            }
+            if (!blocks.isEmpty() && DEBUG_RUN) {
+                System.out.println("[!] No named rodata sections found, falling back to all readable memory blocks (" + blocks.size() + " block(s))");
+            }
+        }
+
+        return blocks;
+    }
+
+    private boolean isDataSection(String blockName) {
+        if (blockName == null) return false;
+        String[] dataSections = {".data", ".rodata", ".rdata", "__const", "__cstring", "__data"};
+        for (String section : dataSections) {
+            if (blockName.contains(section)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private int countXRefs(Function function){
         // Get the entry point of the function.
         Address entry = function.getEntryPoint();       
@@ -297,6 +359,28 @@ public class Pair<K, V> {
             Address foundAddress = searchForPattern(memory, start, end, pattern);
             if (foundAddress != null) {
                 System.out.println("[*] Found pattern: " + byteArrayToHex(pattern) + " at: " + foundAddress+ " (IDA: 0x"+get_ida_address(foundAddress)+")");
+                return foundAddress;
+            }
+        }
+        return null;
+    }
+
+    private Address searchPatternFast(Memory memory, Address start, Address end, byte[] pattern) {
+        try {
+            return memory.findBytes(start, end, pattern, null, true, getMonitor());
+        } catch (Exception e) {
+            if (DEBUG_RUN) {
+                System.out.println("[!] Fast search failed, falling back to manual scan: " + e.getMessage());
+            }
+            return searchForPattern(memory, start, end, pattern);
+        }
+    }
+
+    private Address searchPatternsFast(Memory memory, Address start, Address end, byte[][] patterns) throws Exception {
+        for (byte[] pattern : patterns) {
+            Address foundAddress = searchPatternFast(memory, start, end, pattern);
+            if (foundAddress != null) {
+                System.out.println("[*] Found pattern: " + byteArrayToHex(pattern) + " at: " + foundAddress + " (IDA: 0x" + get_ida_address(foundAddress) + ")");
                 return foundAddress;
             }
         }
@@ -369,7 +453,7 @@ public Pair<Function, Address> traceDataSectionPointer(Program program, Address 
                     String blockName = block.getName();
             
                     // Determine if the address belongs to a data section
-                    if (blockName.contains(".data") || blockName.contains(".rodata")) {
+                    if (isDataSection(blockName)) {
                         if(DEBUG_RUN){
                             System.out.println("[!] The address is pointing to another data section:"+blockName+ " at address: "+refAddress);
                         }
@@ -443,56 +527,47 @@ public Pair<Function, Address> traceDataSectionPointer(Program program, Address 
 
     private boolean isHexStringInRodata(String targetString) {
 
-
-        byte[] targetBytes = targetString.getBytes(); // Convert the target string to bytes
+        byte[] targetBytes = targetString.getBytes();
         Memory memory = currentProgram.getMemory();
-        MemoryBlock rodataBlock = memory.getBlock(".rodata"); // Locate the .rodata section
+        List<MemoryBlock> rodataBlocks = findAllRodataBlocks();
 
-        if (rodataBlock == null) {
-            rodataBlock = memory.getBlock(".rdata");
-            if (rodataBlock == null) {
-                return false;
-            }
+        if (rodataBlocks.isEmpty()) {
+            return false;
         }
-
-        Address start = rodataBlock.getStart();
-        Address end = rodataBlock.getEnd();
 
         byte[] littleEndianPattern = new byte[targetBytes.length];
         for (int i = 0; i < targetBytes.length; i++) {
             littleEndianPattern[i] = targetBytes[targetBytes.length - 1 - i];
         }
 
-        // Variants of the pattern
         byte[] bigEndianWithNull = appendByte(targetBytes, (byte) 0x00);
         byte[] bigEndianWithSpace = appendByte(targetBytes, (byte) 0x20);
         byte[] littleEndianWithNull = appendByte(littleEndianPattern, (byte) 0x00);
         byte[] littleEndianWithSpace = appendByte(littleEndianPattern, (byte) 0x20);
-        Address foundAddress = null;
 
-        try {
+        for (MemoryBlock rodataBlock : rodataBlocks) {
+            Address start = rodataBlock.getStart();
+            Address end = rodataBlock.getEnd();
+            Address foundAddress = null;
 
-            // First, search for the big-endian pattern
-            foundAddress = searchPatterns(memory, start, end,
-            new byte[][] {bigEndianWithNull, bigEndianWithSpace, targetBytes});
-            if (foundAddress != null) {
-                return true;
-            }
+            try {
+                foundAddress = searchPatterns(memory, start, end,
+                    new byte[][] {bigEndianWithNull, bigEndianWithSpace, targetBytes});
+                if (foundAddress != null) {
+                    return true;
+                }
 
-            if(foundAddress == null){
-                // If not found, search for the little-endian pattern
                 foundAddress = searchPatterns(memory, start, end,
                     new byte[][] {littleEndianWithNull, littleEndianWithSpace, littleEndianPattern});
                 if (foundAddress != null) {
                     return true;
                 }
+            } catch (MemoryAccessException e) {
+                // continue to next block
+            } catch (Exception e) {
+                // continue to next block
             }
-
-        } catch (MemoryAccessException e) {
-           // System.err.println("[-] Error accessing memory: " + e.getMessage());
-        } catch (Exception e) {
-           // System.err.println("[-] Error in pattern identification: " + e.getMessage());
-        }        
+        }
         return false;
     }
 
@@ -502,66 +577,84 @@ public Pair<Function, Address> traceDataSectionPointer(Program program, Address 
         Pair<Function, Address> functionAddressPair;
         Address referenceAddress = null;
 
-        byte[] targetBytes = targetString.getBytes(); // Convert the target string to bytes
+        byte[] targetBytes = targetString.getBytes();
         Memory memory = currentProgram.getMemory();
-        MemoryBlock rodataBlock = memory.getBlock(".rodata"); // Locate the .rodata section
+        List<MemoryBlock> rodataBlocks = findAllRodataBlocks();
 
-        if (rodataBlock == null) {
-            rodataBlock = memory.getBlock(".rdata");
-            if (rodataBlock == null) {
-                if(do_print_info_msg){
-                    System.out.println("[-] .rodata section not found!");
-                }
+        if (rodataBlocks.isEmpty()) {
+            if(do_print_info_msg){
+                System.out.println("[-] No read-only data sections found (checked: .rodata, .rdata, __cstring, __const)!");
+            }
+            return new Pair<>(functions, null);
+        }
+
+        if ("skip".equals(LARGE_DUMP_MODE)) {
+            long totalSize = 0;
+            for (MemoryBlock b : rodataBlocks) { totalSize += b.getSize(); }
+            if (totalSize > 100 * 1024 * 1024) {
+                System.out.println("[!] Skipping large memory region (" + (totalSize / (1024 * 1024)) + " MB) due to LARGE_DUMP_MODE=skip");
                 return new Pair<>(functions, null);
             }
         }
-
-        Address start = rodataBlock.getStart();
-        Address end = rodataBlock.getEnd();
 
         byte[] littleEndianPattern = new byte[targetBytes.length];
         for (int i = 0; i < targetBytes.length; i++) {
             littleEndianPattern[i] = targetBytes[targetBytes.length - 1 - i];
         }
 
-        // Variants of the pattern
         byte[] bigEndianWithNull = appendByte(targetBytes, (byte) 0x00);
         byte[] bigEndianWithSpace = appendByte(targetBytes, (byte) 0x20);
         byte[] littleEndianWithNull = appendByte(littleEndianPattern, (byte) 0x00);
         byte[] littleEndianWithSpace = appendByte(littleEndianPattern, (byte) 0x20);
         Address foundAddress = null;
+        String foundBlockName = null;
 
-        try {
+        for (MemoryBlock rodataBlock : rodataBlocks) {
+            Address start = rodataBlock.getStart();
+            Address end = rodataBlock.getEnd();
 
-            // First, search for the big-endian pattern
-            foundAddress = searchPatterns(memory, start, end,
-            new byte[][] {bigEndianWithNull, bigEndianWithSpace, targetBytes});
-            if (foundAddress != null && DEBUG_RUN && do_print_info_msg) {
-                System.out.println("[*] Found big-endian pattern at: " + foundAddress);
-    
-            }
-
-            if(foundAddress == null){
-                // If not found, search for the little-endian pattern
-                foundAddress = searchPatterns(memory, start, end,
-                    new byte[][] {littleEndianWithNull, littleEndianWithSpace, littleEndianPattern});
-                if (foundAddress != null && DEBUG_RUN && do_print_info_msg) {
-                    System.out.println("[*] Found little-endian pattern at: " + foundAddress);
+            try {
+                if ("fast".equals(LARGE_DUMP_MODE)) {
+                    foundAddress = searchPatternsFast(memory, start, end,
+                        new byte[][] {bigEndianWithNull, bigEndianWithSpace, targetBytes});
+                } else {
+                    foundAddress = searchPatterns(memory, start, end,
+                        new byte[][] {bigEndianWithNull, bigEndianWithSpace, targetBytes});
                 }
+                if (foundAddress != null && DEBUG_RUN && do_print_info_msg) {
+                    System.out.println("[*] Found big-endian pattern at: " + foundAddress + " in section " + rodataBlock.getName());
+                }
+
+                if(foundAddress == null){
+                    if ("fast".equals(LARGE_DUMP_MODE)) {
+                        foundAddress = searchPatternsFast(memory, start, end,
+                            new byte[][] {littleEndianWithNull, littleEndianWithSpace, littleEndianPattern});
+                    } else {
+                        foundAddress = searchPatterns(memory, start, end,
+                            new byte[][] {littleEndianWithNull, littleEndianWithSpace, littleEndianPattern});
+                    }
+                    if (foundAddress != null && DEBUG_RUN && do_print_info_msg) {
+                        System.out.println("[*] Found little-endian pattern at: " + foundAddress + " in section " + rodataBlock.getName());
+                    }
+                }
+
+                if (foundAddress != null) {
+                    foundBlockName = rodataBlock.getName();
+                    break;
+                }
+
+            } catch (MemoryAccessException e) {
+                System.err.println("[-] Error accessing memory in " + rodataBlock.getName() + ": " + e.getMessage());
+            } catch (Exception e) {
+                System.err.println("[-] Error in pattern identification in " + rodataBlock.getName() + ": " + e.getMessage());
             }
-
-        } catch (MemoryAccessException e) {
-            System.err.println("[-] Error accessing memory: " + e.getMessage());
-        } catch (Exception e) {
-            System.err.println("[-] Error in pattern identification: " + e.getMessage());
         }
-
 
         if(foundAddress != null){
             if(do_print_info_msg){
-                System.out.println("[*] String found in .rodata section at address: " + foundAddress);
+                System.out.println("[*] String found in " + foundBlockName + " section at address: " + foundAddress);
             }
-            functionAddressPair = findFunctionReferences(foundAddress,".rodata");
+            functionAddressPair = findFunctionReferences(foundAddress, foundBlockName);
             if(functionAddressPair == null){
                 System.out.println("[-] Error in findFunctionReferences...");
                 return new Pair<>(functions, referenceAddress);
@@ -570,10 +663,15 @@ public Pair<Function, Address> traceDataSectionPointer(Program program, Address 
             referenceAddress = functionAddressPair.getSecond();
         }else{
             if(do_print_info_msg){
-                System.err.println("[-] Unable to find pattern in .rodata section as well: "+foundAddress);
+                StringBuilder checkedSections = new StringBuilder();
+                for (MemoryBlock b : rodataBlocks) {
+                    if (checkedSections.length() > 0) checkedSections.append(", ");
+                    checkedSections.append(b.getName());
+                }
+                System.err.println("[-] Unable to find pattern in any read-only data section (checked: " + checkedSections + ")");
             }
         }
-        
+
         return new Pair<>(functions, referenceAddress);
     }
     
@@ -993,6 +1091,14 @@ private Pair<Set<Function>, Address> findHexStringInRodataWrapper(String stringT
 private void do_analysis(String primaryString, String fallbackString){
     // Step 1: Look for the primary string
     System.out.println("[*] Looking for " + primaryString);
+    if(DEBUG_RUN){
+        System.out.println("[!] Memory blocks in binary:");
+        Memory mem = currentProgram.getMemory();
+        for (MemoryBlock block : mem.getBlocks()) {
+            System.out.println("[!]   " + block.getName() + " [" + block.getStart() + " - " + block.getEnd() + "] " +
+                (block.isRead() ? "R" : "") + (block.isWrite() ? "W" : "") + (block.isExecute() ? "X" : ""));
+        }
+    }
     Pair<Set<Function>, Address> result = findStringUsage(primaryString);
 
 
@@ -1038,9 +1144,10 @@ private void set_debug_option(){
         // For example, if you pass "DEBUG_RUN=true" as an argument:
         if (arg.equalsIgnoreCase("DEBUG_RUN=true")) {
             DEBUG_RUN = true;
-            break;
         }
-        
+        if (arg.toUpperCase().startsWith("LARGE_DUMP_MODE=")) {
+            LARGE_DUMP_MODE = arg.substring("LARGE_DUMP_MODE=".length()).toLowerCase();
+        }
     }
 }
 
