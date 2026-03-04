@@ -21,18 +21,14 @@ ENV PATH="${JAVA_HOME}/bin:${PATH}"
 # Build support for decompiler
 RUN cd /opt/ghidra_12.0.3_PUBLIC/support/gradle && gradle buildNatives
 
-# Copy the Ghidra analysis script into the container
+# Copy the project and install the Python package
 WORKDIR /usr/local/src
-COPY boring_secret_hunter_jython.py /usr/local/src/boring_secret_hunter_jython.py
-COPY boring_secret_hunter.py /usr/local/src/boring_secret_hunter.py
-COPY BoringSecretHunter.java /usr/local/src/BoringSecretHunter.java
-COPY MinimalAnalysisOption.java /usr/local/src/MinimalAnalysisOption.java
-COPY custom_log4j.xml /usr/local/src/custom_log4j.xml
-COPY ghidra_analysis.sh /usr/local/src/ghidra_analysis.sh
+COPY . .
+RUN pip3 install . --break-system-packages && \
+    rm -rf build/ src/ *.egg-info
 
 # Set the JVM options using the JAVA_TOOL_OPTIONS environment variable
 ENV JAVA_TOOL_OPTIONS="-Dlog4j.configurationFile=/usr/local/src/custom_log4j.xml"
-
 
 # Make the bash script executable
 RUN chmod +x /usr/local/src/ghidra_analysis.sh

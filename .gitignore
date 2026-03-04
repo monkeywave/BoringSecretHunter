@@ -11,6 +11,9 @@ __pycache__/
 *.js
 *.md
 frida_debug_scan_helper.py
+findElfHeaders.py
+*.bin
+*.ipa
 binary/
 research/
 nonochrome/

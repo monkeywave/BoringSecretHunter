@@ -1,0 +1,13 @@
+binary/
+results/
+.git/
+__pycache__/
+*.egg-info/
+dist/
+.venv/
+*.bin
+*.ipa
+*.apk
+*.so
+.github/
+tests/

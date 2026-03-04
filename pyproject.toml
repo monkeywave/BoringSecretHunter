@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "boring-secret-hunter"
+version = "1.2.0"
+description = "Extract ssl_log_secret() offsets from BoringSSL/RustLS binaries for Frida hooking"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+dependencies = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Security",
+]
+
+[project.scripts]
+bsh = "boring_secret_hunter.cli:main"
+boring-secret-hunter = "boring_secret_hunter.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+boring_secret_hunter = ["ghidra_scripts/*.java", "ghidra_scripts/*.xml"]
+
+[tool.ruff]
+target-version = "py39"
+exclude = [
+    "boring_secret_hunter.py",
+    "boring_secret_hunter_jython.py",
+    "findBoringSSLLibsOnAndroid.py",
+    "findElfHeaders.py",
+    "frida_debug_scan_helper.py",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "--import-mode=importlib"

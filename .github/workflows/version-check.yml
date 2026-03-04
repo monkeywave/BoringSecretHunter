@@ -1,0 +1,53 @@
+name: Version Consistency Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Get version from pyproject.toml
+        id: pyproject
+        run: |
+          VERSION=$(python -c "
+          import tomllib
+          with open('pyproject.toml', 'rb') as f:
+              print(tomllib.load(f)['project']['version'])
+          ")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "pyproject.toml version: $VERSION"
+
+      - name: Check Java VERSION matches pyproject.toml
+        run: |
+          JAVA_VERSION=$(grep -oP 'VERSION = "\K[^"]+' BoringSecretHunter.java)
+          echo "Java VERSION: $JAVA_VERSION"
+          echo "Expected:     ${{ steps.pyproject.outputs.version }}"
+          if [ "$JAVA_VERSION" != "${{ steps.pyproject.outputs.version }}" ]; then
+            echo "::error::Java VERSION ($JAVA_VERSION) does not match pyproject.toml (${{ steps.pyproject.outputs.version }})"
+            exit 1
+          fi
+
+      - name: Check Python package __version__ matches pyproject.toml
+        run: |
+          pip install -e . --quiet
+          PY_VERSION=$(python -c "from boring_secret_hunter import __version__; print(__version__)")
+          echo "Python __version__: $PY_VERSION"
+          echo "Expected:           ${{ steps.pyproject.outputs.version }}"
+          if [ "$PY_VERSION" != "${{ steps.pyproject.outputs.version }}" ]; then
+            echo "::error::Python __version__ ($PY_VERSION) does not match pyproject.toml (${{ steps.pyproject.outputs.version }})"
+            exit 1
+          fi
+
+      - name: All versions consistent
+        run: echo "All versions match ${{ steps.pyproject.outputs.version }}"

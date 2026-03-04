@@ -45,7 +45,7 @@ public class Pair<K, V> {
 }
 
 
-    private static final String VERSION = "1.2.0";
+    private static final String VERSION = "1.1.0";
     private static boolean DEBUG_RUN = false;
     private static String LARGE_DUMP_MODE = "normal";  // "normal", "fast", or "skip"
     public static boolean identifiedTls13 = false;
