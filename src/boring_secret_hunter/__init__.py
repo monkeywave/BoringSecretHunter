@@ -3,7 +3,7 @@
 from importlib.metadata import version, PackageNotFoundError
 
 try:
-    __version__ = version("boring-secret-hunter")
+    __version__ = version("BoringSecretHunter")
 except PackageNotFoundError:
     __version__ = "0.0.0-dev"
 

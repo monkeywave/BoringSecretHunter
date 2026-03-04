@@ -1,10 +1,10 @@
-"""Ensure src/ is first on sys.path to avoid shadowing by root-level boring_secret_hunter.py."""
+"""Ensure src/ is first on sys.path to avoid shadowing by root-level boring_secret_hunter_ghidra.py."""
 
 import sys
 from pathlib import Path
 
 # Insert src/ at the front of sys.path so the package is found
-# before the legacy boring_secret_hunter.py in the project root.
+# before the legacy boring_secret_hunter_ghidra.py in the project root.
 _src = str(Path(__file__).resolve().parent.parent / "src")
 if _src in sys.path:
     sys.path.remove(_src)

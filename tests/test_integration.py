@@ -17,7 +17,7 @@ from boring_secret_hunter.config import find_ghidra, find_java
 TEST_BINARY = Path(__file__).parent.parent / "test" / "libcronet.132.0.6779.0.so"
 
 # Use the installed bsh entry point instead of python -m
-# (avoids shadowing from root-level boring_secret_hunter.py)
+# (avoids shadowing from root-level boring_secret_hunter_ghidra.py)
 BSH = shutil.which("bsh") or [sys.executable, "-m", "boring_secret_hunter"]
 ANALYSIS_TIMEOUT = 600
 

@@ -1,4 +1,4 @@
-"""Root conftest: ensure src/ package takes priority over legacy boring_secret_hunter.py."""
+"""Root conftest: ensure src/ package takes priority over legacy boring_secret_hunter_ghidra.py."""
 
 import sys
 from pathlib import Path
