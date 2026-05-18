@@ -21,11 +21,18 @@ ENV PATH="${JAVA_HOME}/bin:${PATH}"
 # Build support for decompiler
 RUN cd /opt/ghidra_12.0.3_PUBLIC/support/gradle && gradle buildNatives
 
-# Copy the project and install the Python package
 WORKDIR /usr/local/src
-COPY . .
-RUN pip3 install . --break-system-packages && \
-    rm -rf build/ src/ *.egg-info
+COPY ghidra_analysis.sh /usr/local/src/ghidra_analysis.sh
+COPY custom_log4j.xml /usr/local/src/custom_log4j.xml
+COPY src/boring_secret_hunter/ghidra_scripts/BoringSecretHunter.java /usr/local/src/BoringSecretHunter.java
+COPY src/boring_secret_hunter/ghidra_scripts/MinimalAnalysisOption.java /usr/local/src/MinimalAnalysisOption.java
+COPY src/boring_secret_hunter/ghidra_scripts/GhidraContext.java /usr/local/src/GhidraContext.java
+COPY src/boring_secret_hunter/ghidra_scripts/FunctionAnalysisUtils.java /usr/local/src/FunctionAnalysisUtils.java
+COPY src/boring_secret_hunter/ghidra_scripts/MemorySearchUtils.java /usr/local/src/MemorySearchUtils.java
+COPY src/boring_secret_hunter/ghidra_scripts/SSLLogSecretFinder.java /usr/local/src/SSLLogSecretFinder.java
+COPY src/boring_secret_hunter/ghidra_scripts/SSLReadFinder.java /usr/local/src/SSLReadFinder.java
+COPY src/boring_secret_hunter/ghidra_scripts/SSLWriteFinder.java /usr/local/src/SSLWriteFinder.java
+COPY src/boring_secret_hunter/ghidra_scripts/SSLReadWriteHelper.java /usr/local/src/SSLReadWriteHelper.java
 
 # Set the JVM options using the JAVA_TOOL_OPTIONS environment variable
 ENV JAVA_TOOL_OPTIONS="-Dlog4j.configurationFile=/usr/local/src/custom_log4j.xml"

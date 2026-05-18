@@ -52,10 +52,33 @@ def _parse_function_matches(parsed_output: str) -> List[FunctionMatch]:
     """Parse function match info from the BoringSecretHunter output."""
     functions = []
     current = FunctionMatch()
+    current_type = "ssl_log_secret"
+    current_strategy = ""
 
     for line in parsed_output.splitlines():
         line = line.strip()
         if not line:
+            continue
+
+        # Detect SSL_read/SSL_write section headers
+        if line.startswith("[*] SSL_write:"):
+            current_type = "SSL_write"
+            continue
+        elif line.startswith("[*] SSL_read:"):
+            current_type = "SSL_read"
+            continue
+        elif line.startswith("[*] SSL_write_ex:"):
+            current_type = "SSL_write_ex"
+            continue
+        elif line.startswith("[*] SSL_read_ex:"):
+            current_type = "SSL_read_ex"
+            continue
+
+        # Parse strategy name from identification lines
+        if "[+]" in line and "identified via" in line:
+            parts = line.split("identified via")
+            if len(parts) == 2:
+                current_strategy = parts[1].strip().rstrip("!")
             continue
 
         # Look for function label patterns
@@ -64,6 +87,8 @@ def _parse_function_matches(parsed_output: str) -> List[FunctionMatch]:
                 functions.append(current)
                 current = FunctionMatch()
             current.label = line.split(":", 1)[1].strip()
+            current.function_type = current_type
+            current.strategy_name = current_strategy
         elif "Ghidra Offset:" in line or "ghidra offset:" in line.lower():
             current.ghidra_offset = line.split(":", 1)[1].strip()
         elif "IDA Offset:" in line or "ida offset:" in line.lower():
@@ -95,6 +120,9 @@ def analyze_binary(
     debug: bool = False,
     large_dump_mode: Optional[str] = None,
     processor_override: Optional[str] = None,
+    no_symbols: bool = False,
+    strategy: Optional[str] = None,
+    find_ssl_rw: bool = False,
 ) -> AnalysisResult:
     """Analyze a single binary.
 
@@ -149,6 +177,9 @@ def analyze_binary(
             extra_args=extra_args if extra_args else None,
             debug=debug,
             large_dump_mode=large_dump_mode,
+            no_symbols=no_symbols,
+            strategy=strategy,
+            find_ssl_rw=find_ssl_rw,
         )
         result.raw_output = raw_output
 
@@ -180,6 +211,9 @@ def analyze(
     debug: bool = False,
     large_dump_mode: Optional[str] = None,
     processor_override: Optional[str] = None,
+    no_symbols: bool = False,
+    strategy: Optional[str] = None,
+    find_ssl_rw: bool = False,
     on_result: Optional[Callable[[AnalysisResult, str], None]] = None,
 ) -> BatchResult:
     """Analyze one or more binaries.
@@ -229,6 +263,9 @@ def analyze(
                 debug=debug,
                 large_dump_mode=large_dump_mode,
                 processor_override=processor_override,
+                no_symbols=no_symbols,
+                strategy=strategy,
+                find_ssl_rw=find_ssl_rw,
             )
             batch.results.append(result)
 
@@ -254,6 +291,9 @@ def analyze_parallel(
     debug: bool = False,
     large_dump_mode: Optional[str] = None,
     processor_override: Optional[str] = None,
+    no_symbols: bool = False,
+    strategy: Optional[str] = None,
+    find_ssl_rw: bool = False,
 ) -> Dict[Path, AnalysisResult]:
     """Analyze multiple binaries in parallel using threads.
 
@@ -277,6 +317,9 @@ def analyze_parallel(
             debug=debug,
             large_dump_mode=large_dump_mode,
             processor_override=processor_override,
+            no_symbols=no_symbols,
+            strategy=strategy,
+            find_ssl_rw=find_ssl_rw,
         )
         return binary_path, result
 

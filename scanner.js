@@ -6,6 +6,8 @@ const STRING_PATTERNS = [
     "CLIENT_RANDOM",
     "SERVER_HANDSHAKE_TRAFFIC_SECRET",
     "CLIENT_HANDSHAKE_TRAFFIC_SECRET",
+    "s hs traffic",
+    "master secret",
     "SSLKEYLOGFILE"
 ];
 

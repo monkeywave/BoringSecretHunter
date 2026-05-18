@@ -13,6 +13,8 @@ class FunctionMatch:
     ghidra_offset: str = ""
     ida_offset: str = ""
     byte_pattern: str = ""
+    function_type: str = "ssl_log_secret"
+    strategy_name: str = ""
 
 
 @dataclass

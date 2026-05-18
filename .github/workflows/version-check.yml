@@ -30,7 +30,7 @@ jobs:
 
       - name: Check Java VERSION matches pyproject.toml
         run: |
-          JAVA_VERSION=$(grep -oP 'VERSION = "\K[^"]+' BoringSecretHunter.java)
+          JAVA_VERSION=$(grep -oP 'VERSION = "\K[^"]+' src/boring_secret_hunter/ghidra_scripts/BoringSecretHunter.java)
           echo "Java VERSION: $JAVA_VERSION"
           echo "Expected:     ${{ steps.pyproject.outputs.version }}"
           if [ "$JAVA_VERSION" != "${{ steps.pyproject.outputs.version }}" ]; then

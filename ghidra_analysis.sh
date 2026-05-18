@@ -8,6 +8,14 @@ for arg in "$@"; do
     fi
 done
 
+FIND_SSL_RW_FLAG=false
+for arg in "$@"; do
+    if [[ "$arg" == "-s" || "$arg" == "--find-ssl-rw" ]]; then
+        FIND_SSL_RW_FLAG=true
+        break
+    fi
+done
+
 if $DEBUG_FLAG; then
     DEBUG_ARGS="DEBUG_RUN=true"
     echo "[*] Debug mode enabled."
@@ -20,6 +28,13 @@ else
         DEBUG_ARGS=""
         #echo "[*] DEBUG_RUN is not set or false; proceeding without debug output."
     fi
+fi
+
+if $FIND_SSL_RW_FLAG || [[ "${FIND_SSL_RW,,}" == "true" ]]; then
+    SSL_RW_ARGS="FIND_SSL_RW=true"
+    echo "[*] SSL_read/SSL_write scanning enabled (under development — may produce false positives)."
+else
+    SSL_RW_ARGS=""
 fi
 
 
@@ -216,7 +231,7 @@ for bin in "${BINARIES[@]}"; do
 
         # Run the Ghidra analysis script for the current binary
         /opt/ghidra_12.0.3_PUBLIC/support/analyzeHeadless /tmp ghidra_project_$(date +%s) \
-            -import "$bin" $EXTRA_ARGS -scriptPath /usr/local/src/ -prescript /usr/local/src/MinimalAnalysisOption.java -postScript /usr/local/src/BoringSecretHunter.java $DEBUG_ARGS ${DUMP_MODE_ARG:-}
+            -import "$bin" $EXTRA_ARGS -scriptPath /usr/local/src/ -prescript /usr/local/src/MinimalAnalysisOption.java -postScript /usr/local/src/BoringSecretHunter.java $DEBUG_ARGS ${DUMP_MODE_ARG:-} ${SSL_RW_ARGS}
 
         echo "=== Finished analyzing $bin_name ==="
     } >> /usr/local/src/boring_secret_hunter.log 2>&1

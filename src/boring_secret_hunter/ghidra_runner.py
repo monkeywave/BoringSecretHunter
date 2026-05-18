@@ -26,6 +26,9 @@ def run_analysis(
     extra_args: Optional[List[str]] = None,
     debug: bool = False,
     large_dump_mode: Optional[str] = None,
+    no_symbols: bool = False,
+    strategy: Optional[str] = None,
+    find_ssl_rw: bool = False,
     timeout: int = 3600,
 ) -> str:
     """Run Ghidra headless analysis on a binary.
@@ -88,6 +91,12 @@ def run_analysis(
         script_args.append("DEBUG_RUN=true")
     if large_dump_mode and large_dump_mode in ("normal", "fast"):
         script_args.append(f"LARGE_DUMP_MODE={large_dump_mode}")
+    if no_symbols:
+        script_args.append("SKIP_SYMBOLS=true")
+    if strategy:
+        script_args.append(f"STRATEGY={strategy}")
+    if find_ssl_rw:
+        script_args.append("FIND_SSL_RW=true")
 
     if script_args:
         cmd.extend(script_args)

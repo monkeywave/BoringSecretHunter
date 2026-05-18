@@ -35,6 +35,24 @@ def cmd_analyze(args):
         print(f"Error: Path not found: {target}", file=sys.stderr)
         sys.exit(1)
 
+    if args.no_symbols and args.strategy == "SymbolTableLookup":
+        print(
+            "Error: --no-symbols and --strategy SymbolTableLookup are mutually exclusive.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # --no-symbols and --strategy only make sense with SSL_read/SSL_write scanning
+    find_ssl_rw = args.find_ssl_rw
+    if not find_ssl_rw and (args.no_symbols or args.strategy):
+        find_ssl_rw = True
+        print(
+            "Info: --find-ssl-rw implied by "
+            + ("--no-symbols" if args.no_symbols else f"--strategy {args.strategy}")
+            + ".",
+            file=sys.stderr,
+        )
+
     def _print_result(result, parsed):
         print(parsed)
         print()
@@ -45,6 +63,9 @@ def cmd_analyze(args):
         debug=args.debug,
         large_dump_mode=args.large_dump_mode,
         processor_override=args.processor,
+        no_symbols=args.no_symbols,
+        strategy=args.strategy,
+        find_ssl_rw=find_ssl_rw,
         on_result=_print_result,
     )
 
@@ -155,6 +176,11 @@ def main():
     analyze_parser = subparsers.add_parser(
         "analyze",
         help="Analyze binary, archive (APK/IPA/ZIP), or directory",
+        description=(
+            "Analyze a binary, archive (APK/IPA/ZIP), or directory for "
+            "ssl_log_secret() offsets. Pass --find-ssl-rw to additionally "
+            "locate SSL_read / SSL_write (currently under development)."
+        ),
     )
     analyze_parser.add_argument(
         "target",
@@ -184,6 +210,41 @@ def main():
         "--output",
         "-o",
         help="Write results to JSON file",
+    )
+    analyze_parser.add_argument(
+        "--no-symbols",
+        action="store_true",
+        help=(
+            "[Under development] Skip symbol-based identification for "
+            "SSL_read/SSL_write (test pattern matching on non-stripped "
+            "binaries; implies --find-ssl-rw)"
+        ),
+    )
+    analyze_parser.add_argument(
+        "--strategy",
+        choices=[
+            "SymbolTableLookup",
+            "ErrorStringFingerprinting",
+            "NumericErrorCodeFingerprinting",
+            "CallGraphTracing",
+            "AdjacentFunctionScanning",
+            "ConstantFingerprinting",
+            "FunctionSignatureAnalysis",
+            "ErrorCodeTableScan",
+        ],
+        help=(
+            "[Under development] Use only the specified strategy for "
+            "SSL_read/SSL_write identification (implies --find-ssl-rw)"
+        ),
+    )
+    analyze_parser.add_argument(
+        "--find-ssl-rw",
+        action="store_true",
+        default=False,
+        help=(
+            "[Under development] Also identify SSL_read / SSL_write functions "
+            "(off by default; experimental, may produce false positives)"
+        ),
     )
     analyze_parser.set_defaults(func=cmd_analyze)
 

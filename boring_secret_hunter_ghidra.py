@@ -28,11 +28,11 @@ def run_ghidra_command(file_path):
         '-import',
         file_path,
         '-scriptPath',
-        '/usr/local/src/',
+        '/usr/local/src/src/boring_secret_hunter/ghidra_scripts/',
         '-prescript',
-        '/usr/local/src/MinimalAnalysisOption.java',
+        '/usr/local/src/src/boring_secret_hunter/ghidra_scripts/MinimalAnalysisOption.java',
         '-postScript',
-        '/usr/local/src/BoringSecretHunter.java'
+        '/usr/local/src/src/boring_secret_hunter/ghidra_scripts/BoringSecretHunter.java'
     ]
 
 

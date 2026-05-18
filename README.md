@@ -1,6 +1,6 @@
 # BoringSecretHunter
 
-![version](https://img.shields.io/badge/version-1.2.1-blue) [![PyPI version](https://badge.fury.io/py/BoringSecretHunter.svg)](https://badge.fury.io/py/BoringSecretHunter) [![Publish status](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/publish.yml/badge.svg?branch=main)](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/publish.yml)
+![version](https://img.shields.io/badge/version-1.3.0-blue) [![PyPI version](https://badge.fury.io/py/BoringSecretHunter.svg)](https://badge.fury.io/py/BoringSecretHunter) [![Publish status](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/publish.yml/badge.svg?branch=main)](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/publish.yml)
 [![Lint](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/lint.yml/badge.svg)](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/lint.yml) [![Tests](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/test.yml/badge.svg)](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/test.yml) [![Docker](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/docker.yml/badge.svg)](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/docker.yml) 
 
 A Ghidra-based tool designed to analyze binaries and identify the `ssl_log_secret()` function. The tool extracts and prints the byte pattern of this function, making it ready for use with Frida for efficient function hooking and TLS key extraction.
@@ -117,6 +117,44 @@ Supported processor values:
 | `ARM:LE:32:v8` | ARM 32-bit |
 | `x86:LE:64:default` | x86-64 |
 | `x86:LE:32:default` | x86 32-bit |
+
+## Strategy Selection
+
+> **Status: Under active development.** SSL_read/SSL_write detection is opt-in and experimental. The strategies below may produce false positives, especially on stripped binaries or non-BoringSSL TLS stacks. Feedback welcome.
+
+BoringSecretHunter uses 8 detection strategies to identify `SSL_read` and `SSL_write` functions. You can control which strategies are used:
+
+- `--no-symbols` — Skip symbol table lookup (useful for verifying pattern-based detection)
+- `--strategy <name>` — Use only a specific strategy
+
+```bash
+bsh analyze --no-symbols path/to/libssl.so
+bsh analyze --strategy ErrorStringFingerprinting path/to/libssl.so
+```
+
+See [STRATEGY_GUIDE.md](STRATEGY_GUIDE.md) for details on each strategy and usage examples.
+
+## SSL_read / SSL_write Scanning
+
+> **Status: Under active development.** This feature is opt-in and experimental. Detection uses 8 fallback strategies and may produce false positives, especially on stripped binaries or non-BoringSSL TLS stacks. Feedback welcome.
+
+By default, BoringSecretHunter only identifies the `ssl_log_secret()` function. To also scan for `SSL_read` and `SSL_write` functions, use the `--find-ssl-rw` flag:
+
+```bash
+bsh analyze --find-ssl-rw path/to/libssl.so
+```
+
+**Docker (environment variable):**
+```bash
+docker run --rm -v "$(pwd)/binary":/usr/local/src/binaries -e FIND_SSL_RW=true boringsecrethunter
+```
+
+**Docker (command-line flag):**
+```bash
+docker run --rm -v "$(pwd)/binary":/usr/local/src/binaries boringsecrethunter --find-ssl-rw
+```
+
+> **Note:** The `--no-symbols` and `--strategy` flags imply `--find-ssl-rw` automatically, since they only affect SSL_read/SSL_write identification.
 
 ## Interactive Debugging
 
