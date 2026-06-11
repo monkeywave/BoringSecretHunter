@@ -1,6 +1,6 @@
 # BoringSecretHunter
 
-![version](https://img.shields.io/badge/version-1.3.0-blue) [![PyPI version](https://badge.fury.io/py/BoringSecretHunter.svg)](https://badge.fury.io/py/BoringSecretHunter) [![Publish status](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/publish.yml/badge.svg?branch=main)](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/publish.yml)
+![version](https://img.shields.io/badge/version-1.4.0-blue) [![PyPI version](https://badge.fury.io/py/BoringSecretHunter.svg)](https://badge.fury.io/py/BoringSecretHunter) [![Publish status](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/publish.yml/badge.svg?branch=main)](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/publish.yml)
 [![Lint](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/lint.yml/badge.svg)](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/lint.yml) [![Tests](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/test.yml/badge.svg)](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/test.yml) [![Docker](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/docker.yml/badge.svg)](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/docker.yml) 
 
 A Ghidra-based tool designed to analyze binaries and identify the `ssl_log_secret()` function. The tool extracts and prints the byte pattern of this function, making it ready for use with Frida for efficient function hooking and TLS key extraction.
@@ -59,6 +59,53 @@ Function label: FUN_00493BB0
 Function offset: 00493BB0 (0X493BB0)
 Byte pattern for frida (friTap): 3F 23 03 D5 FF C3 01 D1 FD 7B 04 A9 F6 57 05 A9 F4 4F 06 A9 FD 03 01 91 08 34 40 F9 08 11 41 F9 C8 07 00 B4
 ```
+
+## Pattern Output (`patterns.json` for friTap)
+
+Whenever results are found, BoringSecretHunter writes a **friTap-consumable**
+`patterns.json` file. This happens by default in **both** the Docker and the
+pip-installed (`bsh`) versions:
+
+- **Docker:** written into the mounted output folder — `/host_output/patterns.json`
+  (i.e. `results/patterns.json` with `-v "$(pwd)/results":/host_output`).
+- **CLI (`bsh`):** written to `./results/patterns.json` by default (change the
+  directory with `--output-dir`).
+
+The file uses friTap's flat pattern schema and can be passed straight to friTap:
+
+```bash
+fritap --patterns results/patterns.json -m libcronet.so -k keys.log ./yourApp
+```
+
+```json
+{
+  "libcronet.132.0.6779.0.so": {
+    "arm64": { "ssl_log_secret": ["3F 23 03 D5 FF 03 02 D1 ..."] }
+  },
+  "google_quiche": {
+    "arm64": { "QuicSpdyStream_WriteOrBufferBody": ["3F 23 03 D5 ..."] }
+  },
+  "_meta": { "generator": "BoringSecretHunter", "binaries": [ ... ] }
+}
+```
+
+SSL/keylog patterns are keyed by the analysed library's filename; QUIC patterns
+live under `google_quiche`. The `_meta` block carries binary metadata for humans
+and is ignored by friTap (keys starting with `_` are skipped).
+
+**Renaming the file** (e.g. to keep several results side by side):
+
+```bash
+# CLI
+bsh analyze binary/libcronet.so --patterns-file libcronet-patterns.json
+
+# Docker (container flags are consumed by the entrypoint, so use the env var)
+docker run --rm -v "$(pwd)/binary":/usr/local/src/binaries \
+  -v "$(pwd)/results":/host_output -e PATTERNS_FILE=libcronet-patterns.json boringsecrethunter
+```
+
+Pass `--output <path>` (CLI) to write the patterns file to an explicit path; this
+also embeds the full raw Ghidra output inside the file's `_meta` block for debugging.
 
 ## Installation (CLI)
 
@@ -155,6 +202,33 @@ docker run --rm -v "$(pwd)/binary":/usr/local/src/binaries boringsecrethunter --
 ```
 
 > **Note:** The `--no-symbols` and `--strategy` flags imply `--find-ssl-rw` automatically, since they only affect SSL_read/SSL_write identification.
+
+## QUIC / HTTP-3 (QUICHE) Scanning
+
+> **Status: Under active development.** This feature is opt-in and experimental. Detection of Google QUICHE functions relies on structural and string-based heuristics and may produce false positives, especially on stripped binaries. Feedback welcome.
+
+Beyond `ssl_log_secret()`, BoringSecretHunter can locate the Google QUICHE functions that serve as hooking points for QUIC/HTTP-3 plaintext traffic in Chrome/Cronet (e.g. `libcronet`). Enable this scan with the `--find-quiche` flag:
+
+```bash
+bsh analyze --find-quiche binary/libcronet.132.0.6779.0.so
+```
+
+**Docker (environment variable):**
+```bash
+docker run --rm -v "$(pwd)/binary":/usr/local/src/binaries -e FIND_QUICHE=true boringsecrethunter
+```
+
+**Docker (command-line flag):**
+```bash
+docker run --rm -v "$(pwd)/binary":/usr/local/src/binaries boringsecrethunter --find-quiche
+```
+
+When enabled, the following Google QUICHE functions are identified as candidate hooking points:
+
+- `QuicSpdyStream`: `WriteOrBufferBody`, `OnHeadersDecoded`, `WriteHeaders`, `OnDataFramePayload`
+- `QuicStreamSequencer`: `OnStreamFrame`, `Readv`
+- `net::QuicChromiumClientStream`: `WriteHeaders`
+- `QuicSpdySession`: `WriteHeadersOnHeadersStream`
 
 ## Interactive Debugging
 

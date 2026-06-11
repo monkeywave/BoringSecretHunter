@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from boring_secret_hunter import __version__
 from boring_secret_hunter.config import find_ghidra, find_java
 
 TEST_BINARY = Path(__file__).parent.parent / "test" / "libcronet.132.0.6779.0.so"
@@ -48,7 +49,7 @@ requires_test_binary = pytest.mark.skipif(
 class TestCLI:
     def test_version(self):
         result = _run_bsh("--version")
-        assert "2.0.0" in result.stdout or "2.0.0" in result.stderr
+        assert __version__ in result.stdout or __version__ in result.stderr
 
     def test_help(self):
         result = _run_bsh("--help")
@@ -59,6 +60,12 @@ class TestCLI:
         result = _run_bsh("analyze", "--help")
         assert result.returncode == 0
         assert "--debug" in result.stdout
+
+    def test_analyze_help_shows_timeout_and_memory(self):
+        result = _run_bsh("analyze", "--help")
+        assert result.returncode == 0
+        assert "--timeout" in result.stdout
+        assert "--max-memory" in result.stdout
 
 
 class TestCheckCommand:
@@ -78,7 +85,7 @@ class TestAnalysis:
         assert result.returncode in (0, 1)
 
     def test_analyze_json_output(self, tmp_path):
-        """Test JSON output mode."""
+        """--output writes a friTap-consumable patterns file with a _meta block."""
         json_path = tmp_path / "result.json"
         _run_bsh(
             "analyze",
@@ -89,5 +96,45 @@ class TestAnalysis:
         )
         if json_path.exists():
             data = json.loads(json_path.read_text())
-            assert "results" in data
-            assert "total" in data
+            # friTap flat schema: a _meta block (ignored by friTap) carries the
+            # per-binary metadata that used to be the full BatchResult dump.
+            assert "_meta" in data
+            assert data["_meta"]["generator"] == "BoringSecretHunter"
+            assert isinstance(data["_meta"]["binaries"], list)
+            # At least one real (non-_) library section with arch -> func -> list.
+            lib_keys = [k for k in data if not k.startswith("_")]
+            for lib in lib_keys:
+                for arch, funcs in data[lib].items():
+                    for patterns in funcs.values():
+                        assert isinstance(patterns, list)
+
+    def test_analyze_default_patterns_file(self, tmp_path):
+        """By default a results/patterns.json is written into the output dir."""
+        _run_bsh(
+            "analyze",
+            str(TEST_BINARY),
+            timeout=ANALYSIS_TIMEOUT,
+            cwd=str(tmp_path),
+        )
+        default_path = tmp_path / "results" / "patterns.json"
+        # Only present when patterns were extracted; assert schema if so.
+        if default_path.exists():
+            data = json.loads(default_path.read_text())
+            assert "_meta" in data
+            assert any(not k.startswith("_") for k in data)
+
+    def test_analyze_patterns_file_override(self, tmp_path):
+        """--patterns-file renames the patterns file inside the output dir."""
+        _run_bsh(
+            "analyze",
+            str(TEST_BINARY),
+            "--patterns-file",
+            "custom.json",
+            timeout=ANALYSIS_TIMEOUT,
+            cwd=str(tmp_path),
+        )
+        custom = tmp_path / "results" / "custom.json"
+        default = tmp_path / "results" / "patterns.json"
+        if custom.exists() or default.exists():
+            assert custom.exists()
+            assert not default.exists()

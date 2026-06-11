@@ -27,6 +27,10 @@ class AnalysisResult:
     binary_type: str = ""
     tls_library_type: str = ""
     functions: List[FunctionMatch] = field(default_factory=list)
+    # QUICHE (Google QUIC) byte patterns in friTap flat libtype form:
+    # {"google_quiche": {<arch>: {<label>: ["<hex pattern>"]}}}. Empty unless the
+    # QUICHE finder (FIND_QUICHE) ran and located functions.
+    quiche_patterns: dict = field(default_factory=dict)
     success: bool = False
     error: Optional[str] = None
     raw_output: str = ""

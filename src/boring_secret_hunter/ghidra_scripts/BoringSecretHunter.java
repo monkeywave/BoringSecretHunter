@@ -11,12 +11,13 @@ import java.util.*;
 
 public class BoringSecretHunter extends GhidraScript {
 
-    private static final String VERSION = "1.3.0";
+    private static final String VERSION = "1.4.0";
     private static boolean DEBUG_RUN = false;
     private static String LARGE_DUMP_MODE = "normal";  // "normal", "fast", or "skip"
     private static boolean SKIP_SYMBOLS = false;
     private static String FORCED_STRATEGY = null;  // null = use all strategies in order
     private static boolean FIND_SSL_RW = false;
+    private static boolean FIND_QUICHE = false;
 
     private void printBoringSecretHunterLogo() {
         if(DEBUG_RUN){
@@ -78,6 +79,9 @@ public class BoringSecretHunter extends GhidraScript {
             if (arg.equalsIgnoreCase("FIND_SSL_RW=true")) {
                 FIND_SSL_RW = true;
             }
+            if (arg.equalsIgnoreCase("FIND_QUICHE=true")) {
+                FIND_QUICHE = true;
+            }
         }
     }
 
@@ -86,7 +90,6 @@ public class BoringSecretHunter extends GhidraScript {
         for (MemoryBlock block : memory.getBlocks()) {
             String blockName = block.getName();
             if (blockName != null && (blockName.contains(".rustc") || blockName.contains("note.rustc"))) {
-                System.out.println("0");
                 return true;
             }
         }
@@ -121,7 +124,6 @@ public class BoringSecretHunter extends GhidraScript {
         for (String marker : rustStringMarkers) {
             boolean has_rust_String = memUtils.is_string_in_binary(marker);
             if(has_rust_String){
-                System.out.println("1");
                 return true;
             }
         }
@@ -129,7 +131,6 @@ public class BoringSecretHunter extends GhidraScript {
         for (String marker : rustStringMarkers) {
             boolean has_rust_String = memUtils.isHexStringInRodata(marker);
             if(has_rust_String){
-                System.out.println("2");
                 return true;
             }
         }
@@ -195,6 +196,17 @@ public class BoringSecretHunter extends GhidraScript {
             sslHelper.identify();
         }
 
+        // Phase 2.5: Find Google QUICHE QUIC stream functions (opt-in via FIND_QUICHE=true)
+        if (FIND_QUICHE) {
+            if (memUtils.is_string_in_binary("quiche/quic/core/http/quic_spdy_stream.cc")
+                || memUtils.is_string_in_binary("quiche/quic/core/quic_stream_sequencer.cc")) {
+                QuicheFinder qf = new QuicheFinder(ctx, memUtils, analysisUtils, DEBUG_RUN);
+                qf.identify();
+            } else {
+                println("[*] QUICHE source-path strings not present; skipping QUICHE detection.");
+            }
+        }
+
         // Phase 3: Rust TLS detection
         if (is_target_binary_a_rust_binary(ctx, memUtils)) {
             secretFinder.printMaxPattern();
@@ -206,8 +218,7 @@ public class BoringSecretHunter extends GhidraScript {
             if (result.getSecond() == null) {
                 result = memUtils.findHexStringInRodataWrapper(fallbackString, false);
                 if (result.getFirst().isEmpty()) {
-                    System.out.println("[*]result.getFirst().isEmpty(): " + result.getFirst().isEmpty());
-                    System.out.println("\n[*] Target binary is a Rust binary. Looking if RusTLS was used...");
+                    System.out.println("\n[*] Rust code markers detected. Checking whether RusTLS is used for TLS...");
                     result = memUtils.findHexStringInRodataWrapper(primaryString, false);
                     if (result.getFirst().isEmpty()) {
                         System.out.println("[*] No RusTLS detected. Keep using the BoringSSL hooks!");

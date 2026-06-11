@@ -37,12 +37,36 @@ else
     SSL_RW_ARGS=""
 fi
 
+FIND_QUICHE_FLAG=false
+for arg in "$@"; do
+    if [[ "$arg" == "-q" || "$arg" == "--find-quiche" ]]; then
+        FIND_QUICHE_FLAG=true
+        break
+    fi
+done
+
+if $FIND_QUICHE_FLAG || [[ "${FIND_QUICHE,,}" == "true" ]]; then
+    QUICHE_ARGS="FIND_QUICHE=true"
+    echo "[*] Google QUICHE (QUIC/HTTP-3) scanning enabled."
+else
+    QUICHE_ARGS=""
+fi
+
 
 
 
 
 # Truncate the log file at the beginning of each Docker run to ensure a fresh log
 > /usr/local/src/boring_secret_hunter.log
+
+# friTap-consumable patterns JSON. The file is written into the mounted
+# /host_output folder (set by `-v "$(pwd)/results":/host_output`). PATTERNS_FILE
+# overrides the filename (default: patterns.json) — the Docker equivalent of the
+# bsh --patterns-file flag, since container flags are consumed by the entrypoint.
+PATTERNS_FILE="${PATTERNS_FILE:-patterns.json}"
+PATTERNS_OUTPUT="/host_output/${PATTERNS_FILE}"
+PARSED_DIR="$(mktemp -d /tmp/bsh_parsed_XXXXXX)"
+MANIFEST="$(mktemp /tmp/bsh_manifest_XXXXXX.tsv)"
 
 # === Pre-processing: Extract archives (IPA/APK) ===
 EXTRACTED_FILES=()
@@ -231,16 +255,35 @@ for bin in "${BINARIES[@]}"; do
 
         # Run the Ghidra analysis script for the current binary
         /opt/ghidra_12.0.3_PUBLIC/support/analyzeHeadless /tmp ghidra_project_$(date +%s) \
-            -import "$bin" $EXTRA_ARGS -scriptPath /usr/local/src/ -prescript /usr/local/src/MinimalAnalysisOption.java -postScript /usr/local/src/BoringSecretHunter.java $DEBUG_ARGS ${DUMP_MODE_ARG:-} ${SSL_RW_ARGS}
+            -import "$bin" $EXTRA_ARGS -scriptPath /usr/local/src/ -prescript /usr/local/src/MinimalAnalysisOption.java -postScript /usr/local/src/BoringSecretHunter.java $DEBUG_ARGS ${DUMP_MODE_ARG:-} ${SSL_RW_ARGS} ${QUICHE_ARGS}
 
         echo "=== Finished analyzing $bin_name ==="
     } >> /usr/local/src/boring_secret_hunter.log 2>&1
 
-    # Parse the log file for relevant output
+    # Parse the log file for relevant output. Print it to stdout (unchanged
+    # behaviour) and also capture it so we can build the friTap patterns JSON
+    # after all binaries have been analysed.
+    parsed_file="${PARSED_DIR}/${COUNT}_${bin_name}.txt"
     sed -n "/=== Start analyzing $(basename "$bin") ===/,/=== Finished analyzing $(basename "$bin") ===/p" /usr/local/src/boring_secret_hunter.log | \
-    sed -n '/BoringSecretHunter/,/Thx for using BoringSecretHunter/p'
+    sed -n '/BoringSecretHunter/,/Thx for using BoringSecretHunter/p' | tee "$parsed_file"
+    printf '%s\t%s\n' "$bin" "$parsed_file" >> "$MANIFEST"
     echo ""
 done
+
+# === Build the friTap-consumable patterns JSON into /host_output ===
+if [[ -s "$MANIFEST" ]]; then
+    EXPORT_DEBUG=""
+    [[ -n "$DEBUG_ARGS" ]] && EXPORT_DEBUG="--debug"
+    if bsh export-patterns --manifest "$MANIFEST" --output "$PATTERNS_OUTPUT" $EXPORT_DEBUG; then
+        if [[ -f "$PATTERNS_OUTPUT" ]]; then
+            echo "[*] friTap patterns written to /host_output/${PATTERNS_FILE} (your mounted results directory on the host)"
+        else
+            echo "[*] No patterns extracted; ${PATTERNS_FILE} was not created."
+        fi
+    else
+        echo "[!] Failed to build friTap patterns JSON." >&2
+    fi
+fi
 
 # === Cleanup: Remove extracted binaries and temp dirs ===
 for extracted_file in "${EXTRACTED_FILES[@]}"; do
@@ -249,3 +292,4 @@ done
 for tmp_dir in "${TEMP_DIRS[@]}"; do
     rm -rf "$tmp_dir"
 done
+rm -rf "$PARSED_DIR" "$MANIFEST"

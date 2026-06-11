@@ -21,6 +21,11 @@ ENV PATH="${JAVA_HOME}/bin:${PATH}"
 # Build support for decompiler
 RUN cd /opt/ghidra_12.0.3_PUBLIC/support/gradle && gradle buildNatives
 
+# Raise the headless analyzer heap so large stripped libraries (e.g. Chrome's
+# ~193 MB libmonochrome_64.so) can be analyzed. The default MAXMEM=2G lives in
+# the analyzeHeadless launcher; launch.sh turns it into -Xmx.
+RUN sed -i 's/^MAXMEM=2G/MAXMEM=5G/' /opt/ghidra_12.0.3_PUBLIC/support/analyzeHeadless
+
 WORKDIR /usr/local/src
 COPY ghidra_analysis.sh /usr/local/src/ghidra_analysis.sh
 COPY custom_log4j.xml /usr/local/src/custom_log4j.xml
@@ -33,6 +38,20 @@ COPY src/boring_secret_hunter/ghidra_scripts/SSLLogSecretFinder.java /usr/local/
 COPY src/boring_secret_hunter/ghidra_scripts/SSLReadFinder.java /usr/local/src/SSLReadFinder.java
 COPY src/boring_secret_hunter/ghidra_scripts/SSLWriteFinder.java /usr/local/src/SSLWriteFinder.java
 COPY src/boring_secret_hunter/ghidra_scripts/SSLReadWriteHelper.java /usr/local/src/SSLReadWriteHelper.java
+COPY src/boring_secret_hunter/ghidra_scripts/QuicheFinder.java /usr/local/src/QuicheFinder.java
+COPY src/boring_secret_hunter/ghidra_scripts/QuicSpdyStreamFinder.java /usr/local/src/QuicSpdyStreamFinder.java
+COPY src/boring_secret_hunter/ghidra_scripts/QuicStreamSequencerFinder.java /usr/local/src/QuicStreamSequencerFinder.java
+COPY src/boring_secret_hunter/ghidra_scripts/QuicChromiumClientStreamFinder.java /usr/local/src/QuicChromiumClientStreamFinder.java
+COPY src/boring_secret_hunter/ghidra_scripts/QuicSpdySessionFinder.java /usr/local/src/QuicSpdySessionFinder.java
+
+# Install the BoringSecretHunter Python package so the entrypoint can run
+# `bsh export-patterns` to emit a friTap-consumable patterns.json. Ghidra is
+# still launched directly by ghidra_analysis.sh; the package is used ONLY for
+# the JSON export step, sharing the exact builder/parsers with the PyPi path.
+COPY pyproject.toml /opt/bsh-src/pyproject.toml
+COPY README.md /opt/bsh-src/README.md
+COPY src /opt/bsh-src/src
+RUN pip3 install --no-cache-dir --break-system-packages /opt/bsh-src
 
 # Set the JVM options using the JAVA_TOOL_OPTIONS environment variable
 ENV JAVA_TOOL_OPTIONS="-Dlog4j.configurationFile=/usr/local/src/custom_log4j.xml"

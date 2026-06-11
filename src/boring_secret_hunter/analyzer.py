@@ -1,6 +1,7 @@
 """Main analysis orchestrator — ports ghidra_analysis.sh."""
 
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 import shutil
@@ -48,6 +49,20 @@ def discover_binaries(path: Path) -> List[Path]:
     return binaries
 
 
+# QUICHE finder (Phase 2.5) emits one self-contained line per located function:
+#   [QUICHE_FUNC] label=<L> ghidra=<addr> ida=<addr> strategy=<S> pattern=<hex...>
+# and an arch line `[QUICHE] arch=<arm64|arm|x64|x86>`. The pattern field is the
+# rest of the line (space-separated hex), so it must be matched last.
+_QUICHE_FUNC_RE = re.compile(
+    r"\[QUICHE_FUNC\]\s+label=(\S+)\s+ghidra=(\S+)\s+ida=(\S+)\s+strategy=(\S+)\s+pattern=(.+)$"
+)
+_QUICHE_ARCH_RE = re.compile(r"\[QUICHE\]\s+arch=(\S+)")
+
+# Ghidra prints function labels as "label (function repr)" where both parts are
+# identical for our functions; this strips the redundant trailing parenthetical.
+_LABEL_STRIP_RE = re.compile(r"\s*\([^)]*\)\s*$")
+
+
 def _parse_function_matches(parsed_output: str) -> List[FunctionMatch]:
     """Parse function match info from the BoringSecretHunter output."""
     functions = []
@@ -74,6 +89,22 @@ def _parse_function_matches(parsed_output: str) -> List[FunctionMatch]:
             current_type = "SSL_read_ex"
             continue
 
+        # QUICHE finder records are self-contained single lines.
+        quiche_m = _QUICHE_FUNC_RE.search(line)
+        if quiche_m:
+            label, ghidra, ida, strategy, pattern = quiche_m.groups()
+            functions.append(
+                FunctionMatch(
+                    label=label,
+                    ghidra_offset=ghidra,
+                    ida_offset=ida,
+                    byte_pattern=pattern.strip(),
+                    function_type="quiche",
+                    strategy_name=strategy,
+                )
+            )
+            continue
+
         # Parse strategy name from identification lines
         if "[+]" in line and "identified via" in line:
             parts = line.split("identified via")
@@ -81,25 +112,59 @@ def _parse_function_matches(parsed_output: str) -> List[FunctionMatch]:
                 current_strategy = parts[1].strip().rstrip("!")
             continue
 
-        # Look for function label patterns
-        if "Function Label:" in line or "function label:" in line.lower():
+        # Look for function label / offset / byte-pattern lines. Match the
+        # actual Ghidra script output ("Function label:", "Function offset
+        # (Ghidra):", "Function offset (IDA with base 0x0):", "Byte pattern for
+        # frida (friTap):") as well as the older short forms, for robustness.
+        low = line.lower()
+        if "function label:" in low:
             if current.label:
                 functions.append(current)
                 current = FunctionMatch()
             current.label = line.split(":", 1)[1].strip()
+            # Strip the redundant trailing parenthetical so it never lands in
+            # patterns.json (e.g. "FUN_x (FUN_x)" -> "FUN_x").
+            current.label = _LABEL_STRIP_RE.sub("", current.label)
             current.function_type = current_type
             current.strategy_name = current_strategy
-        elif "Ghidra Offset:" in line or "ghidra offset:" in line.lower():
+        elif "ghidra offset:" in low or "function offset (ghidra):" in low:
             current.ghidra_offset = line.split(":", 1)[1].strip()
-        elif "IDA Offset:" in line or "ida offset:" in line.lower():
+        elif "ida offset:" in low or "function offset (ida" in low:
             current.ida_offset = line.split(":", 1)[1].strip()
-        elif "Byte Pattern:" in line or "byte pattern:" in line.lower():
+        elif ("byte pattern:" in low or "byte pattern for frida" in low) and (
+            "truncated" not in low
+        ):
             current.byte_pattern = line.split(":", 1)[1].strip()
 
     if current.label:
         functions.append(current)
 
     return functions
+
+
+def _parse_quiche_patterns(parsed_output: str) -> dict:
+    """Parse the QUICHE detection block into friTap flat libtype form.
+
+    Returns {"google_quiche": {<arch>: {<label>: ["<pattern>"]}}}, or {} if the
+    QUICHE finder produced no located functions. This is the friTap
+    default_patterns.json / --patterns schema (loader.py accepts the flat
+    libtype form), so the result can be merged straight into a patterns file.
+    """
+    arch = "arm64"
+    funcs: Dict[str, List[str]] = {}
+    for line in parsed_output.splitlines():
+        line = line.strip()
+        arch_m = _QUICHE_ARCH_RE.search(line)
+        if arch_m:
+            arch = arch_m.group(1).strip() or arch
+            continue
+        func_m = _QUICHE_FUNC_RE.search(line)
+        if func_m:
+            label, _ghidra, _ida, _strategy, pattern = func_m.groups()
+            funcs.setdefault(label, []).append(pattern.strip())
+    if not funcs:
+        return {}
+    return {"google_quiche": {arch: funcs}}
 
 
 def _detect_tls_library(parsed_output: str) -> str:
@@ -114,6 +179,31 @@ def _detect_tls_library(parsed_output: str) -> str:
     return "unknown"
 
 
+def result_from_parsed_output(binary_path: Path, parsed_text: str) -> AnalysisResult:
+    """Reconstruct an AnalysisResult from already-parsed BoringSecretHunter text.
+
+    Used by the Docker export path, where Ghidra is launched by the bash script
+    and only the filtered (parsed) output is available. Reuses the same parsers
+    as the in-process analysis so both paths yield identical patterns.
+    """
+    result = AnalysisResult(
+        binary_name=binary_path.name,
+        binary_path=str(binary_path),
+    )
+    if binary_path.is_file():
+        result.binary_type = classify_binary(binary_path).value
+        arch = detect_architecture(binary_path)
+        if arch:
+            result.architecture = arch
+
+    if parsed_text.strip():
+        result.success = True
+        result.functions = _parse_function_matches(parsed_text)
+        result.quiche_patterns = _parse_quiche_patterns(parsed_text)
+        result.tls_library_type = _detect_tls_library(parsed_text)
+    return result
+
+
 def analyze_binary(
     binary_path: Path,
     ghidra_dir: str,
@@ -123,6 +213,9 @@ def analyze_binary(
     no_symbols: bool = False,
     strategy: Optional[str] = None,
     find_ssl_rw: bool = False,
+    find_quiche: bool = False,
+    timeout: Optional[int] = None,
+    max_memory: Optional[str] = None,
 ) -> AnalysisResult:
     """Analyze a single binary.
 
@@ -132,6 +225,8 @@ def analyze_binary(
         debug: Enable debug output
         large_dump_mode: Mode for large dumps ('normal', 'fast', 'skip')
         processor_override: Override processor detection with this value
+        timeout: Ghidra subprocess timeout in seconds (None = no timeout)
+        max_memory: Ghidra JVM max heap, e.g. "5G" (None = host default)
     """
     result = AnalysisResult(
         binary_name=binary_path.name,
@@ -180,6 +275,9 @@ def analyze_binary(
             no_symbols=no_symbols,
             strategy=strategy,
             find_ssl_rw=find_ssl_rw,
+            find_quiche=find_quiche,
+            timeout=timeout,
+            max_memory=max_memory,
         )
         result.raw_output = raw_output
 
@@ -187,6 +285,7 @@ def analyze_binary(
         if parsed.strip():
             result.success = True
             result.functions = _parse_function_matches(parsed)
+            result.quiche_patterns = _parse_quiche_patterns(parsed)
             result.tls_library_type = _detect_tls_library(parsed)
         else:
             log.warning(
@@ -214,6 +313,9 @@ def analyze(
     no_symbols: bool = False,
     strategy: Optional[str] = None,
     find_ssl_rw: bool = False,
+    find_quiche: bool = False,
+    timeout: Optional[int] = None,
+    max_memory: Optional[str] = None,
     on_result: Optional[Callable[[AnalysisResult, str], None]] = None,
 ) -> BatchResult:
     """Analyze one or more binaries.
@@ -266,6 +368,9 @@ def analyze(
                 no_symbols=no_symbols,
                 strategy=strategy,
                 find_ssl_rw=find_ssl_rw,
+                find_quiche=find_quiche,
+                timeout=timeout,
+                max_memory=max_memory,
             )
             batch.results.append(result)
 
@@ -294,6 +399,7 @@ def analyze_parallel(
     no_symbols: bool = False,
     strategy: Optional[str] = None,
     find_ssl_rw: bool = False,
+    find_quiche: bool = False,
 ) -> Dict[Path, AnalysisResult]:
     """Analyze multiple binaries in parallel using threads.
 
@@ -320,6 +426,7 @@ def analyze_parallel(
             no_symbols=no_symbols,
             strategy=strategy,
             find_ssl_rw=find_ssl_rw,
+            find_quiche=find_quiche,
         )
         return binary_path, result
 

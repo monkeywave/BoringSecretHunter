@@ -448,7 +448,7 @@ public class MemorySearchUtils {
                             System.out.println("[!] The address is pointing to another data section:" + blockName + " at address: " + refAddress);
                         }
                         GhidraContext.Pair<Function, Address> dataPair = traceDataSectionPointer(ctx.program, refAddress, 4);
-                        if (dataPair.first != null && dataPair.second != null) {
+                        if (dataPair != null && dataPair.first != null && dataPair.second != null) {
                             functionAddressPairs.add(dataPair);
                         }
                     } else {
@@ -500,6 +500,9 @@ public class MemorySearchUtils {
             }
         }
 
+        if (functionAddressPairs.isEmpty()) {
+            return null;
+        }
         return functionAddressPairs.getFirst();
     }
 

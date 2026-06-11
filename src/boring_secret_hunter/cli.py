@@ -2,12 +2,29 @@
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
 from boring_secret_hunter import __version__
 
 log = logging.getLogger(__name__)
+
+# Default name for the friTap-consumable pattern file. Overridable via the
+# --patterns-file CLI flag or the PATTERNS_FILE environment variable (the env
+# var is how the Docker entrypoint receives the override, since its own flags
+# are consumed by the container entrypoint).
+DEFAULT_PATTERNS_FILENAME = "patterns.json"
+DEFAULT_OUTPUT_DIR = "results"
+
+
+def _resolve_patterns_filename(args) -> str:
+    """Resolve the patterns filename: --patterns-file > $PATTERNS_FILE > default."""
+    return (
+        getattr(args, "patterns_file", None)
+        or os.environ.get("PATTERNS_FILE")
+        or DEFAULT_PATTERNS_FILENAME
+    )
 
 
 def cmd_analyze(args):
@@ -57,6 +74,10 @@ def cmd_analyze(args):
         print(parsed)
         print()
 
+    # 0 (or unset) means "no timeout"; an empty --max-memory keeps the host default.
+    timeout = args.timeout or None
+    max_memory = args.max_memory or None
+
     result = analyze(
         path=target,
         ghidra_dir=ghidra_dir,
@@ -66,14 +87,30 @@ def cmd_analyze(args):
         no_symbols=args.no_symbols,
         strategy=args.strategy,
         find_ssl_rw=find_ssl_rw,
+        find_quiche=args.find_quiche,
+        timeout=timeout,
+        max_memory=max_memory,
         on_result=_print_result,
     )
 
-    # JSON output
+    # friTap-consumable patterns.json. Always written by default when there are
+    # results: to the explicit --output path if given, otherwise to
+    # <output-dir>/<patterns-file> (default ./results/patterns.json). --output
+    # (or --debug) additionally embeds the full raw Ghidra output in _meta.
+    from boring_secret_hunter.patterns_export import (
+        build_fritap_patterns,
+        write_patterns_file,
+    )
+
+    patterns = build_fritap_patterns(
+        result.results, include_raw_output=bool(args.output or args.debug)
+    )
     if args.output:
-        output_path = Path(args.output)
-        output_path.write_text(result.to_json())
-        log.info("Results written to %s", output_path)
+        patterns_path = Path(args.output)
+    else:
+        patterns_path = Path(args.output_dir) / _resolve_patterns_filename(args)
+    if not write_patterns_file(patterns, patterns_path):
+        log.info("No patterns extracted — %s was not created.", patterns_path.resolve())
 
     # Summary
     if result.total == 0:
@@ -87,6 +124,48 @@ def cmd_analyze(args):
 
     if result.successful == 0:
         sys.exit(1)
+
+
+def cmd_export_patterns(args):
+    """Build a friTap patterns file from pre-parsed BoringSecretHunter output.
+
+    Used by the Docker entrypoint, which runs Ghidra itself and only has the
+    filtered (parsed) text per binary. The manifest is a TSV file with one
+    `binary_path<TAB>parsed_text_path` line per analysed binary.
+    """
+    from boring_secret_hunter.analyzer import result_from_parsed_output
+    from boring_secret_hunter.patterns_export import (
+        build_fritap_patterns,
+        write_patterns_file,
+    )
+    from boring_secret_hunter.utils import setup_logging
+
+    setup_logging(debug=args.debug)
+
+    manifest_path = Path(args.manifest)
+    if not manifest_path.is_file():
+        print(f"Error: manifest not found: {manifest_path}", file=sys.stderr)
+        sys.exit(1)
+
+    results = []
+    for line in manifest_path.read_text().splitlines():
+        if not line.strip():
+            continue
+        binary_path, _, parsed_path = line.partition("\t")
+        if not parsed_path:
+            log.warning("Skipping malformed manifest line: %r", line)
+            continue
+        parsed_text = ""
+        parsed_file = Path(parsed_path)
+        if parsed_file.is_file():
+            parsed_text = parsed_file.read_text()
+        results.append(
+            result_from_parsed_output(Path(binary_path), parsed_text)
+        )
+
+    patterns = build_fritap_patterns(results, include_raw_output=args.debug)
+    if not write_patterns_file(patterns, Path(args.output)):
+        log.info("No patterns extracted — %s was not created.", args.output)
 
 
 def cmd_check(args):
@@ -207,9 +286,53 @@ def main():
         help="Override Ghidra processor (e.g. AARCH64:LE:64:v8A)",
     )
     analyze_parser.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "Maximum seconds to wait for Ghidra per binary. Default: no timeout "
+            "(0 also means unlimited). Set a positive value to abort runaway "
+            "analyses of very large binaries."
+        ),
+    )
+    analyze_parser.add_argument(
+        "--max-memory",
+        default="5G",
+        metavar="SIZE",
+        help=(
+            "Ghidra JVM max heap, e.g. 5G or 4096m (default: 5G, matching the "
+            "Docker image). Larger binaries analyze faster with more heap; pass "
+            "an empty value to keep the host Ghidra default. On hosts with less "
+            "than 5 GB free RAM the JVM may fail to start — lower it (e.g. "
+            "--max-memory 2G)."
+        ),
+    )
+    analyze_parser.add_argument(
         "--output",
         "-o",
-        help="Write results to JSON file",
+        help=(
+            "Explicit path for the friTap patterns JSON file (overrides "
+            "--output-dir/--patterns-file). Also embeds the full raw Ghidra "
+            "output under the file's _meta block for debugging."
+        ),
+    )
+    analyze_parser.add_argument(
+        "--output-dir",
+        default=DEFAULT_OUTPUT_DIR,
+        help=(
+            "Directory for the patterns file when --output is not given "
+            f"(default: ./{DEFAULT_OUTPUT_DIR})"
+        ),
+    )
+    analyze_parser.add_argument(
+        "--patterns-file",
+        default=None,
+        help=(
+            "Filename for the friTap patterns JSON inside --output-dir "
+            f"(default: {DEFAULT_PATTERNS_FILENAME}; also settable via the "
+            "PATTERNS_FILE environment variable)"
+        ),
     )
     analyze_parser.add_argument(
         "--no-symbols",
@@ -246,7 +369,47 @@ def main():
             "(off by default; experimental, may produce false positives)"
         ),
     )
+    analyze_parser.add_argument(
+        "--find-quiche",
+        action="store_true",
+        default=False,
+        help=(
+            "[Under development] Also identify Google QUICHE (Chrome/Cronet HTTP/3) functions: "
+            "QuicSpdyStream::WriteOrBufferBody, OnHeadersDecoded, WriteHeaders, "
+            "OnDataFramePayload; QuicStreamSequencer::OnStreamFrame, Readv; "
+            "net::QuicChromiumClientStream::WriteHeaders; "
+            "QuicSpdySession::WriteHeadersOnHeadersStream"
+        ),
+    )
     analyze_parser.set_defaults(func=cmd_analyze)
+
+    # export-patterns subcommand (used by the Docker entrypoint)
+    export_parser = subparsers.add_parser(
+        "export-patterns",
+        help="Build a friTap patterns JSON from pre-parsed output (internal/Docker)",
+        description=(
+            "Build a friTap-consumable patterns JSON from already-parsed "
+            "BoringSecretHunter output listed in a manifest. Primarily used by "
+            "the Docker entrypoint."
+        ),
+    )
+    export_parser.add_argument(
+        "--manifest",
+        required=True,
+        help="TSV file: one 'binary_path<TAB>parsed_text_path' line per binary",
+    )
+    export_parser.add_argument(
+        "--output",
+        required=True,
+        help="Path to write the friTap patterns JSON file",
+    )
+    export_parser.add_argument(
+        "--debug",
+        "-d",
+        action="store_true",
+        help="Embed raw output in _meta and enable verbose logging",
+    )
+    export_parser.set_defaults(func=cmd_export_patterns)
 
     # check subcommand
     check_parser = subparsers.add_parser(

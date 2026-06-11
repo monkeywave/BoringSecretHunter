@@ -29,7 +29,9 @@ def run_analysis(
     no_symbols: bool = False,
     strategy: Optional[str] = None,
     find_ssl_rw: bool = False,
-    timeout: int = 3600,
+    find_quiche: bool = False,
+    timeout: Optional[int] = None,
+    max_memory: Optional[str] = None,
 ) -> str:
     """Run Ghidra headless analysis on a binary.
 
@@ -39,7 +41,13 @@ def run_analysis(
         extra_args: Additional args (e.g. -processor, -loader)
         debug: Enable debug output
         large_dump_mode: Mode for large dumps ('normal', 'fast', 'skip')
-        timeout: Subprocess timeout in seconds
+        timeout: Subprocess timeout in seconds. ``None`` (the default) means no
+            timeout, matching the Docker entrypoint, so very large binaries are
+            never killed mid-analysis.
+        max_memory: Ghidra JVM max heap (e.g. "5G", "4096m"). Injected via the
+            ``_JAVA_OPTIONS`` env var, which the JVM applies after the launcher's
+            own ``-Xmx`` and therefore overrides it. ``None`` leaves the host
+            Ghidra default untouched.
 
     Returns:
         Raw stdout+stderr output from Ghidra
@@ -97,6 +105,8 @@ def run_analysis(
         script_args.append(f"STRATEGY={strategy}")
     if find_ssl_rw:
         script_args.append("FIND_SSL_RW=true")
+    if find_quiche:
+        script_args.append("FIND_QUICHE=true")
 
     if script_args:
         cmd.extend(script_args)
@@ -113,6 +123,14 @@ def run_analysis(
         log4j_opt = f"-Dlog4j.configurationFile={log4j_uri}"
         if log4j_opt not in existing:
             env["JAVA_TOOL_OPTIONS"] = f"{existing} {log4j_opt}".strip()
+
+    # Raise the JVM heap so large stripped libraries can be analyzed. The
+    # analyzeHeadless launcher forces ``-Xmx`` from its MAXMEM variable on the
+    # command line; we cannot edit the host install, but ``_JAVA_OPTIONS`` is
+    # applied last by the JVM and therefore overrides that command-line value.
+    if max_memory:
+        existing_java_opts = env.get("_JAVA_OPTIONS", "")
+        env["_JAVA_OPTIONS"] = f"{existing_java_opts} -Xmx{max_memory}".strip()
 
     log.debug("Running: %s", " ".join(cmd))
 
@@ -133,7 +151,10 @@ def run_analysis(
 
         return output
     except subprocess.TimeoutExpired:
-        raise GhidraError(f"Ghidra analysis timed out after {timeout}s")
+        raise GhidraError(
+            f"Ghidra analysis timed out after {timeout}s "
+            "(raise or disable with --timeout)"
+        )
     except OSError as e:
         raise GhidraError(f"Failed to run analyzeHeadless: {e}")
     finally:
