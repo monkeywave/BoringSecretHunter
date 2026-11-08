@@ -200,7 +200,7 @@ def cmd_setup_ghidra(args):
     java_path = find_java()
     if not java_path:
         print(
-            "Error: Java (JDK 17+) is required but not found.\n"
+            "Error: Java (JDK 25+, required by Ghidra 12.2) is required but not found.\n"
             "  Install from: https://adoptium.net/",
             file=sys.stderr,
         )
@@ -220,7 +220,7 @@ def cmd_setup_ghidra(args):
     print(
         "  1. Download from: https://github.com/NationalSecurityAgency/ghidra/releases"
     )
-    print("  2. Extract the archive to a directory (e.g. /opt/ghidra_12.0.3_PUBLIC)")
+    print("  2. Extract the archive to a directory (e.g. /opt/ghidra_12.2_PUBLIC)")
     print("  3. Then either:")
     print("     a) Set GHIDRA_INSTALL_DIR=/path/to/ghidra")
     print("     b) Run: bsh setup-ghidra  (to save the path)")

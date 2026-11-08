@@ -254,7 +254,7 @@ for bin in "${BINARIES[@]}"; do
         echo "=== Start analyzing $bin_name ==="
 
         # Run the Ghidra analysis script for the current binary
-        /opt/ghidra_12.0.3_PUBLIC/support/analyzeHeadless /tmp ghidra_project_$(date +%s) \
+        "${GHIDRA_PATH:-/opt/ghidra_12.2_PUBLIC}/support/analyzeHeadless" /tmp ghidra_project_$(date +%s) \
             -import "$bin" $EXTRA_ARGS -scriptPath /usr/local/src/ -prescript /usr/local/src/MinimalAnalysisOption.java -postScript /usr/local/src/BoringSecretHunter.java $DEBUG_ARGS ${DUMP_MODE_ARG:-} ${SSL_RW_ARGS} ${QUICHE_ARGS}
 
         echo "=== Finished analyzing $bin_name ==="

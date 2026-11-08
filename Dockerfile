@@ -6,25 +6,30 @@ RUN apt-get update && \
     apt-get install -y python3 python3-pip wget git bison flex build-essential  unzip file && \
     rm -rf /var/lib/apt/lists/*
 
+# Ghidra release to install (Ghidra >= 12.2 requires JDK 25, see base image).
+# Bump both values together; the build date is part of the release asset name.
+ARG GHIDRA_VERSION=12.2
+ARG GHIDRA_BUILD_DATE=20261016
+
 # Install Ghidra
 WORKDIR /opt
-RUN wget https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.0.3_build/ghidra_12.0.3_PUBLIC_20260210.zip -O ghidra.zip && \
+RUN wget https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_${GHIDRA_VERSION}_build/ghidra_${GHIDRA_VERSION}_PUBLIC_${GHIDRA_BUILD_DATE}.zip -O ghidra.zip && \
     unzip ghidra.zip && \
     rm ghidra.zip
 
 # Set Ghidra and Java environment paths
-ENV GHIDRA_PATH=/opt/ghidra_12.0.3_PUBLIC
+ENV GHIDRA_PATH=/opt/ghidra_${GHIDRA_VERSION}_PUBLIC
 ENV JAVA_HOME=/opt/java/openjdk
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
 
 # Build support for decompiler
-RUN cd /opt/ghidra_12.0.3_PUBLIC/support/gradle && gradle buildNatives
+RUN cd "${GHIDRA_PATH}/support/gradle" && gradle buildNatives
 
 # Raise the headless analyzer heap so large stripped libraries (e.g. Chrome's
 # ~193 MB libmonochrome_64.so) can be analyzed. The default MAXMEM=2G lives in
 # the analyzeHeadless launcher; launch.sh turns it into -Xmx.
-RUN sed -i 's/^MAXMEM=2G/MAXMEM=5G/' /opt/ghidra_12.0.3_PUBLIC/support/analyzeHeadless
+RUN sed -i 's/^MAXMEM=2G/MAXMEM=5G/' "${GHIDRA_PATH}/support/analyzeHeadless"
 
 WORKDIR /usr/local/src
 COPY ghidra_analysis.sh /usr/local/src/ghidra_analysis.sh

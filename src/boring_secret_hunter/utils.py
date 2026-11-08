@@ -65,7 +65,7 @@ def check_dependencies(ghidra_path: str = None) -> Tuple[bool, str]:
         version = get_java_version(java_path) or "unknown version"
         lines.append(f"  {color('[OK]', 'green')} Java: {java_path} ({version})")
     else:
-        lines.append(f"  {color('[MISSING]', 'red')} Java: not found (need JDK 17+)")
+        lines.append(f"  {color('[MISSING]', 'red')} Java: not found (need JDK 25+)")
         all_ok = False
 
     # Check Ghidra

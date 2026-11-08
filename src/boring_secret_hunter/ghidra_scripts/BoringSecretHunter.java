@@ -1,4 +1,5 @@
 import ghidra.app.script.GhidraScript;
+import ghidra.framework.Application;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.mem.Memory;
@@ -11,7 +12,7 @@ import java.util.*;
 
 public class BoringSecretHunter extends GhidraScript {
 
-    private static final String VERSION = "1.4.0";
+    private static final String VERSION = "1.4.1";
     private static boolean DEBUG_RUN = false;
     private static String LARGE_DUMP_MODE = "normal";  // "normal", "fast", or "skip"
     private static boolean SKIP_SYMBOLS = false;
@@ -23,7 +24,8 @@ public class BoringSecretHunter extends GhidraScript {
         if(DEBUG_RUN){
             System.out.println("[!] BoringSecretHunter Environment infos: ");
             System.out.println("[!] Running on Java version: " + System.getProperty("java.version"));
-            System.out.println("[!] Current Ghidra version: " + currentProgram.getLanguage().getVersion()+"\n");
+            System.out.println("[!] Current Ghidra version: " + Application.getApplicationVersion()
+                    + " (language " + currentProgram.getLanguageID() + " v" + currentProgram.getLanguage().getVersion() + ")\n");
         }
 
         println("");

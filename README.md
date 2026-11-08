@@ -1,6 +1,6 @@
 # BoringSecretHunter
 
-![version](https://img.shields.io/badge/version-1.4.0-blue) [![PyPI version](https://badge.fury.io/py/BoringSecretHunter.svg)](https://badge.fury.io/py/BoringSecretHunter) [![Publish status](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/publish.yml/badge.svg?branch=main)](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/publish.yml)
+![version](https://img.shields.io/badge/version-1.4.1-blue) [![PyPI version](https://badge.fury.io/py/BoringSecretHunter.svg)](https://badge.fury.io/py/BoringSecretHunter) [![Publish status](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/publish.yml/badge.svg?branch=main)](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/publish.yml)
 [![Lint](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/lint.yml/badge.svg)](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/lint.yml) [![Tests](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/test.yml/badge.svg)](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/test.yml) [![Docker](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/docker.yml/badge.svg)](https://github.com/monkeywave/BoringSecretHunter/actions/workflows/docker.yml) 
 
 A Ghidra-based tool designed to analyze binaries and identify the `ssl_log_secret()` function. The tool extracts and prints the byte pattern of this function, making it ready for use with Frida for efficient function hooking and TLS key extraction.
@@ -236,7 +236,7 @@ For deeper inspection or troubleshooting, you can start BoringSecretHunter in in
 ```bash
 $ docker run -it --entrypoint /bin/bash  -v "$(pwd)/binary":/usr/local/src/binaries -v "$(pwd)/results":/host_output boringsecrethunter
 
-# /opt/ghidra_12.0.3_PUBLIC/support/analyzeHeadless /tmp ghidra_project_$(date +%s) \
+# $GHIDRA_PATH/support/analyzeHeadless /tmp ghidra_project_$(date +%s) \
             -import "$bin" -scriptPath /usr/local/src/ -prescript /usr/local/src/MinimalAnalysisOption.java -postScript /usr/local/src/BoringSecretHunter.java DEBUG_RUN=true
 ```
 
